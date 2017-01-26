@@ -989,6 +989,7 @@ class NodeConfig:
             self.hyperthreading = hyperthreading
         else:
             self.hyperthreading = self.__hyperthreading_enabled()
+            self.totalcpus = self.totalcpus / self.hyperthreads_per_core
 
         # Add the devices count i.e. nmics and ngpus to the numa nodes
         self.__add_devices_to_numa_node()
