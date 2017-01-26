@@ -1,0 +1,63 @@
+{
+        "cgroup_prefix"         : "pbspro",
+        "periodic_resc_update"  : true,
+        "exclude_hosts"         : [],
+        "exclude_vntypes"       : ["no_cgroups"],
+        "run_only_on_hosts"     : [ 
+                                   "storm1", "storm2", "storm3", "storm4", "storm5",
+                                   "mudrc1", "mudrc2", "mudrc3", "mudrc4", "mudrc5", "mudrc6", "mudrc7", "mudrc8", "mudrc9", "mudrc10", "mudrc11", "mudrc12",
+                                   "gram1", "gram2", "gram3", "gram4", "gram5", "gram6", "gram7", "gram8", "gram9", "gram10"
+                                  ],
+        "vnode_per_numa_node"   : false,
+        "online_offlined_nodes" : true,
+        "cgroup":
+        {
+                "cpuacct":
+                {
+                        "enabled"               : true,
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : []
+                },
+                "cpuset":
+                {
+                        "enabled"               : true,
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : []
+                },
+                "devices":
+                {
+                        "enabled"               : true,
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : [],
+                        "allow" : [
+							"b *:* rwm",
+							"c *:* rwm",
+							["nvidiactl", "rwm", "*"],
+							["nvidia-uvm", "rwm"]
+						]
+                },
+                "hugetlb":
+                {
+                        "enabled"               : false,
+                        "default"               : "0MB",
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : []
+                },
+                "memory":
+                {
+                        "enabled"               : true,
+                        "default"               : "400MB",
+                        "reserve_memory"        : "0GB",
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : []
+                },
+                "memsw":
+                {
+                        "enabled"               : false,
+                        "default"               : "400MB",
+                        "reserve_memory"        : "0GB",
+                        "exclude_hosts"         : [],
+                        "exclude_vntypes"       : []
+                }
+        }
+}

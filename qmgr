@@ -1,0 +1,129 @@
+#
+# Create hooks and set their properties.
+#
+#
+# Create and define hook cgroups
+#
+create hook cgroups
+set hook cgroups type = site
+set hook cgroups enabled = true
+set hook cgroups event = execjob_begin
+set hook cgroups event += execjob_epilogue
+set hook cgroups event += execjob_end
+set hook cgroups event += execjob_launch
+set hook cgroups event += execjob_attach
+set hook cgroups event += exechost_periodic
+set hook cgroups event += exechost_startup
+set hook cgroups user = pbsadmin
+set hook cgroups alarm = 30
+set hook cgroups freq = 120
+set hook cgroups order = 2
+set hook cgroups debug = false
+set hook cgroups fail_action = none
+import hook cgroups application/x-python default /root/pbspro.hooks/hook_cgroups.py
+import hook cgroups application/x-config default /root/pbspro.hooks/hook_cgroups.json
+
+#
+# Create and define hook scratch
+#
+create hook scratch
+set hook scratch type = site
+set hook scratch enabled = true
+set hook scratch event = execjob_begin
+set hook scratch event += execjob_end
+set hook scratch event += exechost_periodic
+set hook scratch user = pbsadmin
+set hook scratch alarm = 30
+set hook scratch freq = 60
+set hook scratch order = 10
+set hook scratch debug = false
+set hook scratch fail_action = none
+import hook scratch application/x-python default /root/pbspro.hooks/hook_scratch.py
+
+#
+# Create and define hook license
+#
+create hook license
+set hook license type = site
+set hook license enabled = true
+set hook license event = runjob
+set hook license event += execjob_begin
+set hook license user = pbsadmin
+set hook license alarm = 30
+set hook license order = 20
+set hook license debug = false
+set hook license fail_action = none
+import hook license application/x-python default /root/pbspro.hooks/hook_license.py
+
+#
+# Create and define hook docker
+#
+create hook docker
+set hook docker type = site
+set hook docker enabled = false
+set hook docker event = queuejob
+set hook docker event += execjob_end
+set hook docker event += execjob_launch
+set hook docker user = pbsadmin
+set hook docker alarm = 30
+set hook docker order = 3
+set hook docker debug = false
+set hook docker fail_action = none
+import hook docker application/x-python default /root/pbspro.hooks/hook_docker.py
+
+#
+# Create and define hook epi-pro-logue
+#
+create hook epi-pro-logue
+set hook epi-pro-logue type = site
+set hook epi-pro-logue enabled = true
+set hook epi-pro-logue event = execjob_prologue
+set hook epi-pro-logue event += execjob_epilogue
+set hook epi-pro-logue user = pbsadmin
+set hook epi-pro-logue alarm = 30
+set hook epi-pro-logue order = 5
+set hook epi-pro-logue debug = false
+set hook epi-pro-logue fail_action = none
+import hook epi-pro-logue application/x-python default /root/pbspro.hooks/hook_epi-pro-logue.py
+
+#
+# Create and define hook job-enqueued
+#
+create hook job-enqueued
+set hook job-enqueued type = site
+set hook job-enqueued enabled = true
+set hook job-enqueued event = queuejob
+set hook job-enqueued user = pbsadmin
+set hook job-enqueued alarm = 30
+set hook job-enqueued order = 1
+set hook job-enqueued debug = false
+set hook job-enqueued fail_action = none
+import hook job-enqueued application/x-python default /root/pbspro.hooks/hook_job-enqueued.py
+
+#
+# Create and define hook env
+#
+create hook env
+set hook env type = site
+set hook env enabled = true
+set hook env event = execjob_begin
+set hook env user = pbsadmin
+set hook env alarm = 30
+set hook env order = 10
+set hook env debug = false
+set hook env fail_action = none
+import hook env application/x-python default /root/pbspro.hooks/hook_env.py
+
+#
+# Create and define hook cpu_flag
+#
+create hook cpu_flag
+set hook cpu_flag type = site
+set hook cpu_flag enabled = true
+set hook cpu_flag event = exechost_startup
+set hook cpu_flag user = pbsadmin
+set hook cpu_flag alarm = 30
+set hook cpu_flag order = 1
+set hook cpu_flag debug = false
+set hook cpu_flag fail_action = none
+import hook cpu_flag application/x-python default /root/pbspro.hooks/hook_cpu_flag.py
