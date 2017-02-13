@@ -17,9 +17,9 @@ try:
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
         scratch_type = None        
-        host=e.requestor_host.split(".")[0]
+        node=pbs.get_local_nodename()
 
-        pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, host: %s" % host)
+        pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, node: %s" % node)
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s has exec_vnode: %s" % (j.id, str(j.exec_vnode)))
         
         resources = {}
@@ -27,30 +27,30 @@ try:
             i = i.replace("(","")
             i = i.replace(")","")
             
-            host_i = i.split(":")[0].split(".")[0]
+            node_i = i.split(":")[0].split(".")[0]
 
-            if not host_i in resources.keys():
-                resources[host_i] = {}
+            if not node_i in resources.keys():
+                resources[node_i] = {}
 
             # posledni nalezeny scratch je pouzity
             for scratch_i in ["scratch_shared", "scratch_ssd", "scratch_local"]:
                 m = re.search(scratch_i + '=([0-9]+?)kb', i)
                 if m:
-                    if not scratch_i in resources[host_i].keys():
-                        resources[host_i][scratch_i] = 0
-                    resources[host_i][scratch_i] += int(m.group(1))
-                    resources[host_i]["scratch_type"] = scratch_i
+                    if not scratch_i in resources[node_i].keys():
+                        resources[node_i][scratch_i] = 0
+                    resources[node_i][scratch_i] += int(m.group(1))
+                    resources[node_i]["scratch_type"] = scratch_i
 
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, scratch resources: %s" % str(resources))
 
-        # pokud byl pro hosta zadan typ scratche, nastavime ho do scratch_type
-        if host in resources.keys() and "scratch_type" in resources[host].keys():
-            scratch_type = resources[host]["scratch_type"]
+        # pokud byl pro node zadan typ scratche, nastavime ho do scratch_type
+        if node in resources.keys() and "scratch_type" in resources[node].keys():
+            scratch_type = resources[node]["scratch_type"]
         
         if scratch_type:
-            scratch_size = resources[host][scratch_type]
+            scratch_size = resources[node][scratch_type]
 
-            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s: %s %s: %d" % (j.id, host, scratch_type, scratch_size))
+            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s: %s %s: %d" % (j.id, node, scratch_type, scratch_size))
 
             #zapamatovani resourcu v tabulce sqlite
             conn = sqlite3.connect(sqlite_db)
@@ -104,9 +104,9 @@ try:
                 j.Variable_List["TORQUE_RESC_SCRATCH_SSD"]=scratch_size * 1024
 
             scratch_total_size = 0
-            for host_i in resources.keys():
-                if scratch_type in resources[host_i].keys():
-                    scratch_total_size += resources[host_i][scratch_type]
+            for node_i in resources.keys():
+                if scratch_type in resources[node_i].keys():
+                    scratch_total_size += resources[node_i][scratch_type]
             j.Variable_List["PBS_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
             j.Variable_List["TORQUE_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
 
