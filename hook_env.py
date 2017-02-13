@@ -6,8 +6,8 @@ try:
 
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
-        host=e.requestor_host.split(".")[0]
-        pbs.logmsg(pbs.EVENT_DEBUG, "env hook, host: %s" % host)
+        node=pbs.get_local_nodename()
+        pbs.logmsg(pbs.EVENT_DEBUG, "env hook, node: %s" % node)
         pbs.logmsg(pbs.EVENT_DEBUG, "env hook, %s has exec_vnode: %s" % (j.id, str(j.exec_vnode)))
         
         resources = {}
@@ -15,38 +15,38 @@ try:
             i = i.replace("(","")
             i = i.replace(")","")
 
-            host_i = i.split(":")[0].split(".")[0]
+            node_i = i.split(":")[0].split(".")[0]
 
-            if not host_i in resources.keys():
-                resources[host_i] = {"ncpus":0, "mem":0}
+            if not node_i in resources.keys():
+                resources[node_i] = {"ncpus":0, "mem":0}
 
             m = re.search('ncpus=([0-9]+)', i)
             if m:
-                resources[host_i]["ncpus"] += int(m.group(1))
+                resources[node_i]["ncpus"] += int(m.group(1))
 
             m = re.search('mem=([0-9]+)kb', i)
             if m:
-                resources[host_i]["mem"] += int(m.group(1)) * 1024
+                resources[node_i]["mem"] += int(m.group(1)) * 1024
 
         pbs.logmsg(pbs.EVENT_DEBUG, "env hook, resources: %s" % str(resources))
 
-        if host in resources.keys():
-            j.Variable_List["PBS_RESC_MEM"] = resources[host]["mem"]
-            j.Variable_List["TORQUE_RESC_MEM"] = resources[host]["mem"]
+        if node in resources.keys():
+            j.Variable_List["PBS_RESC_MEM"] = resources[node]["mem"]
+            j.Variable_List["TORQUE_RESC_MEM"] = resources[node]["mem"]
 
-            j.Variable_List["PBS_NUM_PPN"] = resources[host]["ncpus"]
-            j.Variable_List["PBS_NCPUS"] = resources[host]["ncpus"]
-            j.Variable_List["TORQUE_RESC_PROC"] = resources[host]["ncpus"]
+            j.Variable_List["PBS_NUM_PPN"] = resources[node]["ncpus"]
+            j.Variable_List["PBS_NCPUS"] = resources[node]["ncpus"]
+            j.Variable_List["TORQUE_RESC_PROC"] = resources[node]["ncpus"]
 
         total_mem = 0
-        for host_i in resources.keys():
-            total_mem += resources[host_i]["mem"]
+        for node_i in resources.keys():
+            total_mem += resources[node_i]["mem"]
         j.Variable_List["PBS_RESC_TOTAL_MEM"] = total_mem
         j.Variable_List["TORQUE_RESC_TOTAL_MEM"] = total_mem
         
         total_ncpus = 0
-        for host_i in resources.keys():
-            total_ncpus += resources[host_i]["ncpus"]
+        for node_i in resources.keys():
+            total_ncpus += resources[node_i]["ncpus"]
         j.Variable_List["PBS_RESC_TOTAL_PROCS"] = total_ncpus
         j.Variable_List["TORQUE_RESC_TOTAL_PROCS"] = total_ncpus        
 
