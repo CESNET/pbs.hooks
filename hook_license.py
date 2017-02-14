@@ -23,7 +23,12 @@ try:
         c = conn.cursor()
                         
         for license in licenses_list:
-            num = j.Resource_List[license]
+            try:
+                num = j.Resource_List[license]
+            except:
+                pbs.logmsg(pbs.EVENT_DEBUG, "license not defined: %s" % license)
+                num = None
+
             if num != None:
                 # pokud tabulka neexistuje, tak ji vytvorim
                 c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='licenses'");
