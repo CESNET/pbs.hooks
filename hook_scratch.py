@@ -112,6 +112,17 @@ try:
 
     if e.type == pbs.EXECJOB_END:
         j = e.job
+
+        if "SCRATCHDIR" in j.Variable_List:
+            # pbs.logmsg(pbs.EVENT_DEBUG, "%s;SCRATCHDIR: %s" % (j.id, j.Variable_List["SCRATCHDIR"]))
+            try:
+                if j.Variable_List["SCRATCHDIR"].startswith("/scratch"):
+                    os.rmdir(j.Variable_List["SCRATCHDIR"])
+                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty SCRATCHDIR: %s removed" % (j.id, j.Variable_List["SCRATCHDIR"]))
+            except OSError as ex:
+                if ex.errno == os.errno.ENOTEMPTY:
+                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;SCRATCHDIR: %s not empty" % (j.id, j.Variable_List["SCRATCHDIR"]))
+
         conn = sqlite3.connect(sqlite_db)
         c = conn.cursor()
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='resources'");
