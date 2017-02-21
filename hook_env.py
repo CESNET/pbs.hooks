@@ -51,7 +51,12 @@ try:
         j.Variable_List["TORQUE_RESC_TOTAL_PROCS"] = total_ncpus        
 
         j.Variable_List["PBS_NUM_NODES"] = len(resources.keys())
-        
+
+        if "walltime" in j.Resource_List.keys():
+            walltime = int(j.Resource_List["walltime"])
+            j.Variable_List["PBS_RESC_TOTAL_WALLTIME"] = walltime
+            j.Variable_List["TORQUE_RESC_TOTAL_WALLTIME"] = walltime
+
         pbs.logmsg(pbs.EVENT_DEBUG, "env hook, new Variable_List: %s" % str(j.Variable_List))
         
 except SystemExit:
