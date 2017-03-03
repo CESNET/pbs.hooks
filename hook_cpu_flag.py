@@ -21,7 +21,7 @@ try:
             line = line.split(":")
             if line[0].strip() == "flags":
                 line[1] = line[1].strip()
-                flags = '"%s"' % ",".join(line[1].split())
+                flags = "%s" % ",".join(line[1].split())
                 break
 
         if flags:
