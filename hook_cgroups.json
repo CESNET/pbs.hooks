@@ -22,7 +22,7 @@
                 },
                 "cpuset":
                 {
-                        "enabled"               : true,
+                        "enabled"               : false,
                         "exclude_hosts"         : [],
                         "exclude_vntypes"       : []
                 },
