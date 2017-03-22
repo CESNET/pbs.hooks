@@ -52,6 +52,10 @@ try:
 
             pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s: %s %s: %d" % (j.id, node, scratch_type, scratch_size))
 
+            if scratch_size == 0:
+                pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, 0kb scratch requested, scratch hook stopped")
+                e.accept()
+
             #zapamatovani resourcu v tabulce sqlite
             conn = sqlite3.connect(sqlite_db)
             c = conn.cursor()
