@@ -8,7 +8,8 @@
                                    "mudrc1", "mudrc2", "mudrc3", "mudrc4", "mudrc5", "mudrc6", "mudrc7", "mudrc8", "mudrc9", "mudrc10", "mudrc11", "mudrc12",
                                    "gram1", "gram2", "gram3", "gram4", "gram5", "gram6", "gram7", "gram8", "gram9", "gram10",
                                    "doom1", "doom2", "doom3", "doom4", "doom5", "doom6", "doom7", "doom8", "doom9", "doom10", "doom11", "doom12", "doom13", "doom14", "doom15", "doom16", "doom17", "doom18", "doom19", "doom20", "doom21", "doom22", "doom23", "doom24", "doom25", "doom26", "doom27", "doom28", "doom29", "doom30",
-                                    "konos1", "konos2", "konos3", "konos4", "konos5", "konos6", "konos7", "konos8", "konos10"
+                                   "konos1", "konos2", "konos3", "konos4", "konos5", "konos6", "konos7", "konos8", "konos10",
+                                   "zubat1", "zubat2", "zubat3", "zubat4", "zubat5", "zubat6", "zubat7", "zubat8"
                                   ],
         "vnode_per_numa_node"   : false,
         "online_offlined_nodes" : true,
