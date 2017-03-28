@@ -30,6 +30,10 @@ try:
             j.Resource_List["select"] = pbs.select("+".join(newselect))
             pbs.logmsg(pbs.LOG_DEBUG, "New select: %s" % str(j.Resource_List))
 
+        if "ncpus" in j.Resource_List.keys() and not "mpiprocs" in j.Resource_List.keys():
+            j.Resource_List["mpiprocs"] = j.Resource_List["ncpus"]
+
+
 
 except SystemExit:
     pass
