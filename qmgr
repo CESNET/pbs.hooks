@@ -32,6 +32,7 @@ set hook scratch enabled = true
 set hook scratch event = execjob_begin
 set hook scratch event += execjob_end
 set hook scratch event += exechost_periodic
+set hook scratch event += queuejob
 set hook scratch user = pbsadmin
 set hook scratch alarm = 60
 set hook scratch freq = 60

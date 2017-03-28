@@ -14,6 +14,25 @@ scratch_types = {"scratch_local":"local", "scratch_ssd":"ssd", "scratch_shared":
 try:
     e = pbs.event()
 
+    if e.type == pbs.QUEUEJOB:
+        j = e.job
+        if "scratch_shared" in j.Resource_List.keys():
+            e.reject("scratch_shared requires 'select' syntax")
+
+        scratch_shared = False
+        if "select" in j.Resource_List.keys():
+            for i in str(j.Resource_List["select"]).split("+"):
+                m = re.search('.*scratch_shared.*', i)
+                if m:
+                    scratch_shared = True
+        if scratch_shared:
+            if "place" in j.Resource_List.keys():
+                m = re.search('.*group=infiniband.*', str(j.Resource_List["place"]))
+                if not m:
+                    j.Resource_List["place"] = pbs.place(str(j.Resource_List["place"]) + ":group=infiniband")
+            else:
+                j.Resource_List["place"] = pbs.place("group=infiniband")
+
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
         scratch_type = None        
@@ -160,5 +179,5 @@ try:
 
 except SystemExit:
     pass
-except:
-    e.reject("scratch hook failed")
+except Exception as err:
+    e.reject("scratch hook failed: %s" % str(err))
