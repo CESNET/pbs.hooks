@@ -128,3 +128,19 @@ set hook cpu_flag order = 1
 set hook cpu_flag debug = false
 set hook cpu_flag fail_action = none
 import hook cpu_flag application/x-python default /root/pbspro.hooks/hook_cpu_flag.py
+
+#
+# Create and define hook health-check
+#
+create hook health-check
+set hook health-check type = site
+set hook health-check enabled = true
+set hook health-check event = exechost_periodic
+set hook health-check user = pbsadmin
+set hook health-check alarm = 90
+set hook health-check freq = 300
+set hook health-check order = 1
+set hook health-check debug = false
+set hook health-check fail_action = none
+import hook health-check application/x-python default /root/pbspro.hooks/hook_health-check.py
+import hook health-check application/x-config default /root/pbspro.hooks/hook_health-check.json

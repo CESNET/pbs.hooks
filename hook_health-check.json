@@ -1,0 +1,11 @@
+{
+        "health_check_file"     : "/var/spool/pbs/mom_scripts/health-check",        
+        "allowed_permission"    : "0700",
+        "allowed_uid"           : 0,
+        "allowed_gid"           : 0,
+        "comment_prefix"        : "HEALTH-CHECK: ",
+        "comments"              : { 
+                                   "0": "",
+                                   "9999": ""
+                                  }
+}
