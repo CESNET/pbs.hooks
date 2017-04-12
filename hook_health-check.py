@@ -14,6 +14,7 @@ class HealthCheck(object):
     allowed_gid = 0
 
     comment_prefix = "HEALTH-CHECK: "
+    comment = None
 
     rc_to_comment = {
         0: None, 
@@ -25,12 +26,13 @@ class HealthCheck(object):
 
         self.parse_cfg()
 
-        try:
-            self.nodename = pbs.get_local_nodename()
-            self.node = pbs.server().vnode(self.nodename)
-        except:
-            pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; failed to get node info from server")
-            self.e.reject()
+        self.nodename = pbs.get_local_nodename()
+
+        #try:
+        #    self.node = pbs.server().vnode(self.nodename)
+        #except:
+        #    pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; failed to get node info from server")
+        #    self.e.reject()
 
         self.vnl = self.e.vnode_list
 
@@ -119,31 +121,40 @@ class HealthCheck(object):
             pbs.logmsg(pbs.EVENT_DEBUG,
                "Health-check hook; stdout: '%s' stderr: '%s'" % (str(stdout).replace("\n", " "), str(stderr).replace("\n", " ")))
 
+        if stdout:
+            lines = stdout.strip().split("\n")
+            self.comment = lines[len(lines)-1]
+
         if stderr:
             pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; stderr not empty, skipping")
             self.e.reject()
 
-    def set_comment_rc(self):
+    def set_comment(self):
         if (self.rc <= 0):
             return
 
         if (self.rc in self.rc_to_comment.keys()):
             self.vnl[self.nodename].comment = self.comment_prefix + self.rc_to_comment[self.rc]
+            return
+
+        if (self.comment):
+            self.vnl[self.nodename].comment = self.comment_prefix + self.comment
+            return
 
     def set_online(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OK")
 
         self.vnl[self.nodename].state = pbs.ND_FREE
 
-        if str(self.node.comment).startswith(self.comment_prefix):
-            self.vnl[self.nodename].comment = None
+        #if str(self.node.comment).startswith(self.comment_prefix):
+        #    self.vnl[self.nodename].comment = None
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
 
-        if (self.node.state != pbs.ND_OFFLINE):
-            self.vnl[self.nodename].state = pbs.ND_OFFLINE
-            self.set_comment_rc()
+        self.vnl[self.nodename].state = pbs.ND_OFFLINE
+
+        #self.set_comment()
 
     def health_check(self):
         if self.e.type == pbs.EXECHOST_PERIODIC:
