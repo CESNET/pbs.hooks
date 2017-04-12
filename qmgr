@@ -144,3 +144,17 @@ set hook health-check debug = false
 set hook health-check fail_action = none
 import hook health-check application/x-python default /root/pbspro.hooks/hook_health-check.py
 import hook health-check application/x-config default /root/pbspro.hooks/hook_health-check.json
+
+#
+# Create and define hook detect_cgroups
+#
+create hook detect_cgroups
+set hook detect_cgroups type = site
+set hook detect_cgroups enabled = true
+set hook detect_cgroups event = exechost_startup
+set hook detect_cgroups user = pbsadmin
+set hook detect_cgroups alarm = 60
+set hook detect_cgroups order = 1
+set hook detect_cgroups debug = false
+set hook detect_cgroups fail_action = none
+import hook detect_cgroups application/x-python default /root/pbspro.hooks/hook_detect_cgroups.py
