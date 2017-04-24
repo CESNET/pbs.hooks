@@ -73,19 +73,20 @@ set hook docker fail_action = none
 import hook docker application/x-python default /root/pbspro.hooks/hook_docker.py
 
 #
-# Create and define hook epi-pro-logue
+# Create and define hook external-hooks
 #
-create hook epi-pro-logue
-set hook epi-pro-logue type = site
-set hook epi-pro-logue enabled = true
-set hook epi-pro-logue event = execjob_prologue
-set hook epi-pro-logue event += execjob_epilogue
-set hook epi-pro-logue user = pbsadmin
-set hook epi-pro-logue alarm = 300
-set hook epi-pro-logue order = 5
-set hook epi-pro-logue debug = false
-set hook epi-pro-logue fail_action = none
-import hook epi-pro-logue application/x-python default /root/pbspro.hooks/hook_epi-pro-logue.py
+create hook external-hooks
+set hook external-hooks type = site
+set hook external-hooks enabled = true
+set hook external-hooks event = execjob_prologue
+set hook external-hooks event += execjob_epilogue
+set hook external-hooks event += execjob_end
+set hook external-hooks user = pbsadmin
+set hook external-hooks alarm = 300
+set hook external-hooks order = 5
+set hook external-hooks debug = false
+set hook external-hooks fail_action = none
+import hook external-hooks application/x-python default /root/pbspro.hooks/hook_external-hooks.py
 
 #
 # Create and define hook job-enqueued
