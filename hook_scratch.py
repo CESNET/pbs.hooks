@@ -90,18 +90,42 @@ try:
             conn.commit()
             conn.close()
 
-            # vytvoreni adresare
+            # vytvoreni adresare - fixed by Petr Kulhanek
             user = j.Job_Owner.split("@")[0]
+            # FIXME
+            # group is taken from the job if set
+            # this implementation consider only the first group name and ignore domain name
+            group = j.group_list
+            if group:
+                group = str(j.group_list).split("@")[0]
+            # umask is taken from the job if set
+            umask = j.umask
 
             path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
 
             try:
-                os.makedirs(path)
+                os.mkdir(path)
                 uid = pwd.getpwnam(user).pw_uid
-                gid = grp.getgrnam("meta").gr_gid
+                gid = pwd.getpwnam(user).pw_gid
+                if group:
+                    # override group setup
+                    try:
+                        # list all user suplemental groups - for cross-check
+                        groups = [g.gr_name for g in grp.getgrall() if user in g.gr_mem]
+                        # add user primary group - gid is still user primary group id
+                        groups.append(grp.getgrgid(gid).gr_name)
+                        if group in groups:
+                            # try to use provided group name
+                            gid = grp.getgrnam(group).gr_gid
+                    except:
+                        # this should not happen but ignore if the group is not defined on this node
+                        pass
                 os.chown(path, uid, gid)
-            except:
-                pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s" % path)
+                if umask:
+                    # mode is a complement to umask
+                    os.chmod(path,0o777^int(str(umask),8))
+            except Exception as err:
+                pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s, err: %s" % (path,str(err)))
 
             #nastaveni env, hodnoty vynasobime 1024, jednotky maji byt v B
 
@@ -177,7 +201,5 @@ try:
 
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, reported %s" % str(dyn_res))
 
-except SystemExit:
-    pass
 except Exception as err:
     e.reject("scratch hook failed: %s" % str(err))
