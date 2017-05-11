@@ -28,11 +28,11 @@ class HealthCheck(object):
 
         self.nodename = pbs.get_local_nodename()
 
-        #try:
-        #    self.node = pbs.server().vnode(self.nodename)
-        #except:
-        #    pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; failed to get node info from server")
-        #    self.e.reject()
+        try:
+            self.node = pbs.server().vnode(self.nodename)
+        except:
+            pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; failed to get node info from server")
+            self.e.reject()
 
         self.vnl = self.e.vnode_list
 
@@ -146,15 +146,15 @@ class HealthCheck(object):
 
         self.vnl[self.nodename].state = pbs.ND_FREE
 
-        #if str(self.node.comment).startswith(self.comment_prefix):
-        #    self.vnl[self.nodename].comment = None
+        if str(self.node.comment).startswith(self.comment_prefix):
+            self.vnl[self.nodename].comment = None
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
 
         self.vnl[self.nodename].state = pbs.ND_OFFLINE
 
-        #self.set_comment()
+        self.set_comment()
 
     def health_check(self):
         if self.e.type == pbs.EXECHOST_PERIODIC:
