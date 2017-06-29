@@ -1,7 +1,7 @@
 {
         "cgroup_prefix"         : "pbspro",
         "periodic_resc_update"  : true,
-        "exclude_hosts"         : [],
+        "exclude_hosts"         : ["phi3", "phi6", "phi2", "phi1", "phi4", "phi5"],
         "exclude_vntypes"       : ["no_cgroups"],
         "run_only_on_hosts"     : [],
         "vnode_per_numa_node"   : false,
