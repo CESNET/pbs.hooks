@@ -48,7 +48,9 @@
                         "enabled"               : true,
                         "default"               : "400MB",
                         "reserve_memory"        : "0GB",
-                        "exclude_hosts"         : [],
+                        "exclude_hosts"         : [
+                                   "zapat100", "zapat101", "zapat102", "zapat103", "zapat104", "zapat105", "zapat106", "zapat107", "zapat108", "zapat109", "zapat110", "zapat111", "zapat112"
+                            ],
                         "exclude_vntypes"       : []
                 },
                 "memsw":
