@@ -117,20 +117,6 @@ set hook env fail_action = none
 import hook env application/x-python default /root/pbspro.hooks/hook_env.py
 
 #
-# Create and define hook cpu_flag
-#
-create hook cpu_flag
-set hook cpu_flag type = site
-set hook cpu_flag enabled = true
-set hook cpu_flag event = exechost_startup
-set hook cpu_flag user = pbsadmin
-set hook cpu_flag alarm = 60
-set hook cpu_flag order = 1
-set hook cpu_flag debug = false
-set hook cpu_flag fail_action = none
-import hook cpu_flag application/x-python default /root/pbspro.hooks/hook_cpu_flag.py
-
-#
 # Create and define hook health-check
 #
 create hook health-check
@@ -147,15 +133,18 @@ import hook health-check application/x-python default /root/pbspro.hooks/hook_he
 import hook health-check application/x-config default /root/pbspro.hooks/hook_health-check.json
 
 #
-# Create and define hook detect_cgroups
+# Create and define hook res_discovery
 #
-create hook detect_cgroups
-set hook detect_cgroups type = site
-set hook detect_cgroups enabled = true
-set hook detect_cgroups event = exechost_startup
-set hook detect_cgroups user = pbsadmin
-set hook detect_cgroups alarm = 60
-set hook detect_cgroups order = 1
-set hook detect_cgroups debug = false
-set hook detect_cgroups fail_action = none
-import hook detect_cgroups application/x-python default /root/pbspro.hooks/hook_detect_cgroups.py
+create hook res_discovery
+set hook res_discovery type = site
+set hook res_discovery enabled = true
+set hook res_discovery event = exechost_periodic
+set hook res_discovery event += exechost_startup
+set hook res_discovery user = pbsadmin
+set hook res_discovery alarm = 30
+set hook res_discovery freq = 3600
+set hook res_discovery order = 5
+set hook res_discovery debug = false
+set hook res_discovery fail_action = none
+import hook res_discovery application/x-python default /root/pbspro.hooks/hook_res_discovery.py
+import hook res_discovery application/x-config default /root/pbspro.hooks/hook_cgroups.json
