@@ -1,5 +1,6 @@
 import pbs
 import os
+import json
 
 
 class Discovery(object):
@@ -7,7 +8,9 @@ class Discovery(object):
     hook_events = {}
     vnl = None
     local_node = None
-
+    
+    cgroups_types = ["cpuacct", "cpuset", "memory", "memsw"]    
+    exclude_hosts = {}
 
 
     def __init__(self, pbs_event):
@@ -49,20 +52,60 @@ class Discovery(object):
 
 
 
+    def parse_cfg(self):
+        config = {}
+        if 'PBS_HOOK_CONFIG_FILE' in os.environ:
+            config_file = os.environ["PBS_HOOK_CONFIG_FILE"]
+            try:
+                config = json.loads(open(config_file, 'r').read())
+            except:
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to open config file" % self.hook_name)
+                config = {}
+                return False
+
+        try:
+            if "exclude_hosts" in config.keys():
+                self.exclude_hosts["general"] = list(config["exclude_hosts"])
+                
+                
+            if "cgroup" in config.keys():
+                for flag in self.cgroups_types:
+                    if flag in config["cgroup"].keys() and "exclude_hosts" in config["cgroup"][flag].keys():
+                        self.exclude_hosts[flag] = list(config["cgroup"][flag]["exclude_hosts"])
+
+        except Exception as err:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to parse config '%s'" % (self.hook_name, err))
+            return False
+            
+        return True
+
+
+
     ################################################
     # cgroups
     ################################################
     def getandset_cgroups(self):
+        flags = []
+        
+        if not self.parse_cfg():
+			return False
+
+        if self.local_node in self.exclude_hosts["general"]:
+			pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags))) 
+			self.vnl[self.local_node].resources_available["cgroups"] = None
+			return True
+		
+        for flag in self.cgroups_types:
+            if os.path.isdir("/sys/fs/cgroup/%s" % flag) and self.local_node not in self.exclude_hosts[flag]:
+                flags.append(flag)
+        
         try:
-            if os.path.isdir("/sys/fs/cgroup/cpuset") and os.path.isdir("/sys/fs/cgroup/memory"):
-                self.vnl[self.local_node].resources_available["cgroups"] = True
-                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cgroups set to: True" % self.hook_name)
-            else:
-                self.vnl[self.local_node].resources_available["cgroups"] = None
-                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cgroups unset" % self.hook_name)
+            self.vnl[self.local_node].resources_available["cgroups"] = ",".join(flags)
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags)))            
         except Exception as err:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_cgroups error: %s" % (self.hook_name, str(err)))
             return False
+            		 
         return True
 
 
@@ -134,7 +177,7 @@ class Discovery(object):
 
 try:
     e = pbs.event()
-    discovery = Discovery(e)    
+    discovery = Discovery(e)
     discovery.run()
     discovery.accept()                
 except SystemExit:
