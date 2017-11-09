@@ -532,7 +532,7 @@ class HookUtils:
                     # don't put quotes around the values. ex "0" or "0,1".
                     # This will cause it to fail.
                     env_list.append('CUDA_VISIBLE_DEVICES=%s' %
-                                    string.join(gpus, ','))
+                                    string.join(gpus, '\,'))
 
             pbs.logmsg(pbs.EVENT_DEBUG, "ENV_LIST: %s" % env_list)
             cgroup.write_out_cgroup_host_job_env_file(e.job.id, env_list)
@@ -2040,7 +2040,7 @@ class CgroupUtils:
                 pbs.logmsg(pbs.EVENT_DEBUG3,
                            "offload_devices: %s" % offload_devices)
             if len(cuda_visible_devices) > 0:
-                value = '"%s"' % string.join(cuda_visible_devices, ",")
+                value = '%s' % string.join(cuda_visible_devices, "\,")
                 pbs.logmsg(pbs.EVENT_DEBUG3,
                            "Environment: %s" % pbs.event().env)
                 pbs.event().env['CUDA_VISIBLE_DEVICES'] = value
