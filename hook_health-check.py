@@ -158,7 +158,11 @@ class HealthCheck(object):
         self.vnl[self.nodename].state = pbs.ND_FREE
 
         if self.comment_prefix in str(self.node.comment):
-            self.vnl[self.nodename].comment = self.get_prev_comment()
+            comment = self.get_prev_comment()
+            if comment:
+                self.vnl[self.nodename].comment = comment
+            else:
+                self.vnl[self.nodename].comment = None
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
