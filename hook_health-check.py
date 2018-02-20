@@ -3,6 +3,7 @@ import json
 import os
 import stat
 import subprocess
+import re
 
 
 class HealthCheck(object):
@@ -129,25 +130,35 @@ class HealthCheck(object):
             pbs.logmsg(pbs.EVENT_DEBUG, "Health-check hook; stderr not empty, skipping")
             self.e.reject()
 
+    def get_prev_comment(self):
+        if self.node.comment:
+            return re.sub(self.comment_prefix + '.*', '', self.node.comment).strip()
+
+        return ""
+
     def set_comment(self):
         if (self.rc <= 0):
             return
 
+        comment = None
+
         if (self.rc in self.rc_to_comment.keys()):
-            self.vnl[self.nodename].comment = self.comment_prefix + self.rc_to_comment[self.rc]
-            return
+            comment = self.rc_to_comment[self.rc]
 
         if (self.comment):
-            self.vnl[self.nodename].comment = self.comment_prefix + self.comment
-            return
+            comment = self.comment
+
+        if comment:
+            comment = self.get_prev_comment() + " " + self.comment_prefix + comment
+            self.vnl[self.nodename].comment = comment.strip()
 
     def set_online(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OK")
 
         self.vnl[self.nodename].state = pbs.ND_FREE
 
-        if str(self.node.comment).startswith(self.comment_prefix):
-            self.vnl[self.nodename].comment = None
+        if self.comment_prefix in str(self.node.comment):
+            self.vnl[self.nodename].comment = self.get_prev_comment()
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
