@@ -27,11 +27,11 @@ try:
                     scratch_shared = True
         if scratch_shared:
             if "place" in j.Resource_List.keys():
-                m = re.search('.*group=infiniband.*', str(j.Resource_List["place"]))
+                m = re.search('.*group=.*', str(j.Resource_List["place"]))
                 if not m:
-                    j.Resource_List["place"] = pbs.place(str(j.Resource_List["place"]) + ":group=infiniband")
+                    j.Resource_List["place"] = pbs.place(str(j.Resource_List["place"]) + ":group=cluster")
             else:
-                j.Resource_List["place"] = pbs.place("group=infiniband")
+                j.Resource_List["place"] = pbs.place("group=cluster")
 
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
