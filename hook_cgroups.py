@@ -2019,6 +2019,9 @@ class CgroupUtils:
         """ Setup the job environment for the devices assigned to the job for an
             execjob_launch hook
          """
+        if 'devices' in self.subsystems:
+            # prevent using GPUs without user awareness
+            pbs.event().env['CUDA_VISIBLE_DEVICES'] = ''
         if 'devices_name' in self.host_assigned_resources:
             names = self.host_assigned_resources['devices_name']
             pbs.logmsg(pbs.EVENT_DEBUG3,
