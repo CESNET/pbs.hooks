@@ -1130,20 +1130,22 @@ class NodeConfig:
                                    "numa_node: %s" % (numa_node))
                         if int(numa_node) == -1:
                             numa_node = 0
-                        gpu_data[name][number]['numa_node'] = int(numa_node)
-                        try:
-                            dev_filename = '/dev/%s' % number
-                            s = os.stat(dev_filename)
-                        except OSError:
-                            pbs.logmsg(pbs.EVENT_DEBUG,
-                                       "Unable to find %s" % dev_filename)
-                        except:
-                            pbs.logmsg(pbs.EVENT_DEBUG,
-                                       "Unexpected error: %s" %
-                                       sys.exc_info()[0])
-                        gpu_data[name][number]['major'] = os.major(s.st_rdev)
-                        gpu_data[name][number]['minor'] = os.minor(s.st_rdev)
-                        gpu_data[name][number]['device_type'] = 'c'
+                    else:
+                        numa_node = 0;
+                    gpu_data[name][number]['numa_node'] = int(numa_node)
+                    try:
+                        dev_filename = '/dev/%s' % number
+                        s = os.stat(dev_filename)
+                    except OSError:
+                        pbs.logmsg(pbs.EVENT_DEBUG,
+                                   "Unable to find %s" % dev_filename)
+                    except:
+                        pbs.logmsg(pbs.EVENT_DEBUG,
+                                   "Unexpected error: %s" %
+                                   sys.exc_info()[0])
+                    gpu_data[name][number]['major'] = os.major(s.st_rdev)
+                    gpu_data[name][number]['minor'] = os.minor(s.st_rdev)
+                    gpu_data[name][number]['device_type'] = 'c'
             pbs.logmsg(pbs.EVENT_DEBUG, "%s" % gpu_data)
             return gpu_data
         except OSError:
