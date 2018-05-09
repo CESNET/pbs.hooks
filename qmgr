@@ -40,6 +40,7 @@ set hook scratch order = 10
 set hook scratch debug = false
 set hook scratch fail_action = none
 import hook scratch application/x-python default /root/pbspro.hooks/hook_scratch.py
+import hook scratch application/x-config default /root/pbspro.hooks/hook_scratch.json
 
 #
 # Create and define hook license
