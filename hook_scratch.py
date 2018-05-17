@@ -271,9 +271,17 @@ try:
                     # the child
                     for path, dirs, files in os.walk(jobpath):
                         for f in files:
-                            s = os.stat(os.path.join(path, f))
+                            filepath = os.path.join(path, f)
+
+                            if not os.path.isfile(filepath):
+                                continue
+
+                            if os.path.islink(filepath):
+                                continue
+
+                            s = os.stat(filepath)
                             if s.st_blocks:
-					            dead_size += (s.st_blocks * 512) # in B
+                                dead_size += (s.st_blocks * 512) # in B
 
                     dead_size = dead_size/1024 # in KB
                     try:
@@ -281,7 +289,7 @@ try:
                             f.write(str(dead_size))
                     except:
                         pass
-                    exit(0)
+                    sys.exit()
 
                 if pid > 0:
                     # this is the parent, save the pid file
