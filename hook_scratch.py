@@ -7,6 +7,7 @@ import os
 import pwd
 import grp
 import json
+import socket
 
 dead_size_filename = ".dead.size"
 sqlite_db="/var/spool/pbs/resources.db"
@@ -241,6 +242,7 @@ try:
         def get_deadsize(jobpath):
             f_dead_size = os.path.join(jobpath, dead_size_filename)
             f_dead_size_pidfile = os.path.join(jobpath, dead_size_filename + ".pid")
+            f_dead_size_nodefile = os.path.join(jobpath, dead_size_filename + ".node")
 
             dead_size = 0
 
@@ -253,6 +255,19 @@ try:
                         dead_size = 0
 
             if not dead_size:
+                try:
+                    this_node = socket.gethostname()
+                except:
+                    this_node = "none"
+
+                checking_node = "none"
+                if os.path.isfile(f_dead_size_nodefile):
+                    try:
+                        with open(f_dead_size_nodefile, 'r') as f:
+                            checking_node = f.read().strip()
+                    except:
+                        checking_node = "none"
+
                 if os.path.isfile(f_dead_size_pidfile):
                     # is the check already runnning?
                     try:
@@ -260,6 +275,12 @@ try:
                             pid = int(f.read())
                     except:
                         pid = 0
+
+                    if pid and this_node != checking_node:
+                        # different node is checking, not finished yet
+                        pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook node %s still checking %s" % (checking_node, jobpath))
+                        return 0
+
                     if pid and check_pid(pid):
                         # not finished yet
                         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook pid %d still checking %s" % (pid, jobpath))
@@ -298,6 +319,12 @@ try:
                             f.write(str(pid))
                     except:
                         pbs.logmsg(pbs.EVENT_ERROR, "scratch hook failed to write pidfile %s" % f_dead_size_pidfile)
+
+                    try:
+                        with open(f_dead_size_nodefile, 'w') as f:
+                            f.write(str(this_node))
+                    except:
+                        pbs.logmsg(pbs.EVENT_ERROR, "scratch hook failed to write file %s" % f_dead_size_nodefile)
 
             #pbs.logmsg(pbs.EVENT_DEBUG, "SCRATCH path %s size %s" % (jobpath, str(dead_size)))
 
