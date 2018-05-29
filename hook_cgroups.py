@@ -2542,7 +2542,7 @@ class CgroupUtils:
                                "Splitting %s at ','" %
                                (available[socket]['cpus']))
                     available[socket]['cpus'] = cpus2list(
-                        available[socket]['cpus'].split(',')[0])
+                        ','.join(available[socket]['cpus'].split(',')[:1+available[socket]['cpus'].count(',')/2]))
                 else:
                     available[socket]['cpus'] = cpus2list(
                         available[socket]['cpus'])
