@@ -476,6 +476,7 @@ try:
             global scratch_paths
 
             total_size = 0
+            total_dead_size = 0
 
             try:
 				# the total size of the scratch partition
@@ -484,7 +485,11 @@ try:
             except:
                 return 0
 
-            dead_size_total = 0
+            try:
+                s = os.statvfs("/%s/" % scratch_paths[scratch_type])
+                free_size = (s.f_bsize * s.f_bavail) /1024
+            except:
+                free_size = 0
 
             # for each user directory and each job directory in the scratch dir
             # check the deadsize but only if the job is not runnning
@@ -504,12 +509,26 @@ try:
                         # do not count running jobs
                         continue
 
-                    dead_size_total += get_deadsize(job_path)
+                    total_dead_size += get_deadsize(job_path)
 
             # check files outside job directories
-            dead_size_total += get_nonjob_trash(os.path.join("/", scratch_paths[scratch_type]))
+            total_dead_size += get_nonjob_trash(os.path.join("/", scratch_paths[scratch_type]))
 
-            return max(0, total_size - dead_size_total)
+            workspace = total_size - total_dead_size
+
+            # reserved = SUM(reserved[j], j in running_jobs)
+            reserved = 0
+            for job in pbs.event().job_list.keys():
+                local_node = pbs.get_local_nodename()
+                resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode)
+                if local_node in resources.keys() and "scratch_type" in resources[local_node].keys() and scratch_type == resources[local_node]["scratch_type"]:
+                    reserved = resources[local_node][scratch_type]
+
+            free_correction = max(0, workspace - reserved - free_size)
+
+            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook %s total_dead_size: %d workspace: %d reserved: %d free_correction %d free_size %s" % (scratch_type, total_dead_size, workspace, reserved, free_correction, free_size))
+
+            return max(0, workspace - free_correction)
 
 
 
