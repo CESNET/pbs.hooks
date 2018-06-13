@@ -149,3 +149,17 @@ set hook res_discovery debug = false
 set hook res_discovery fail_action = none
 import hook res_discovery application/x-python default /root/pbspro.hooks/hook_res_discovery.py
 import hook res_discovery application/x-config default /root/pbspro.hooks/hook_cgroups.json
+
+#
+# Create and define hook uvsize
+#
+create hook uvsize
+set hook uvsize type = site
+set hook uvsize enabled = true
+set hook uvsize event = queuejob
+set hook uvsize user = pbsadmin
+set hook uvsize alarm = 60
+set hook uvsize order = 2
+set hook uvsize debug = false
+set hook uvsize fail_action = none
+import hook uvsize application/x-python default /root/pbspro.hooks/hook_uvsize.py
