@@ -15,7 +15,7 @@ try:
     if e.type == pbs.QUEUEJOB:
         j = e.job
 
-        if str(j.queue) != "uv":
+        if str(j.queue).split("@")[0] != "uv":
 			e.accept()
 
         reqncpus = 0
