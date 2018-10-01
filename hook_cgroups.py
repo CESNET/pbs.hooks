@@ -2438,6 +2438,7 @@ class CgroupUtils:
                                (socket, resources['mem'],
                                 available[socket]['memory']))
                     room_on_socket = False
+            room_on_socket = False
             if room_on_socket:
                 pbs.logmsg(pbs.EVENT_DEBUG3,
                            "Assigned Resources: %s" % (assigned))
