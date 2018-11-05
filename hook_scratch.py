@@ -26,7 +26,7 @@ def parse_cfg():
         try:
             config = json.loads(open(config_file, 'r').read())
         except Exception as err:
-            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook; failed to open config file")
+            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook; failed to open config file %s: %s" % (config_file, str(err)))
             config = {}
             return config
 
@@ -71,6 +71,21 @@ def parse_exec_vnode(exec_vnode):
 
     return resources
 
+def check_scratch_use_as(config, scratch_type, node):
+    # check if type conversion is defined
+    if scratch_type and scratch_type in config.keys():
+        scratch_use_as = None
+        for scratch_as in config[scratch_type].keys():
+            if node in config[scratch_type][scratch_as]:
+                scratch_use_as = str(scratch_as)
+                resources[node][scratch_use_as] = resources[node][scratch_type]
+
+        return scratch_use_as
+
+    return None
+
+
+
 try:
     e = pbs.event()
 
@@ -100,7 +115,7 @@ try:
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
         scratch_type = None        
-        node=pbs.get_local_nodename()
+        node = pbs.get_local_nodename()
 
         config = parse_cfg()
 
@@ -116,15 +131,10 @@ try:
             scratch_type = resources[node]["scratch_type"]
 
         # check if type conversion is defined
-        if scratch_type and scratch_type in config.keys():
-            scratch_use_as = None
-            for scratch_as in config[scratch_type].keys():
-                if node in config[scratch_type][scratch_as]:
-                    scratch_use_as = str(scratch_as)
-                    resources[node][scratch_use_as] = resources[node][scratch_type]
+        scratch_use_as = check_scratch_use_as(config, scratch_type, node)
 
-            if scratch_use_as:
-                scratch_type = scratch_use_as
+        if scratch_use_as:
+            scratch_type = scratch_use_as
 
         if scratch_type:
             scratch_size = resources[node][scratch_type]
@@ -220,17 +230,33 @@ try:
 
 
     if e.type == pbs.EXECJOB_END:
+        scratch_type = None
         j = e.job
+        node = pbs.get_local_nodename()
+        user = j.Job_Owner.split("@")[0]
+        resources = parse_exec_vnode(j.exec_vnode)
 
-        if "SCRATCHDIR" in j.Variable_List:
-            # pbs.logmsg(pbs.EVENT_DEBUG, "%s;SCRATCHDIR: %s" % (j.id, j.Variable_List["SCRATCHDIR"]))
+        config = parse_cfg()
+
+        # pokud byl pro node zadan typ scratche, nastavime ho do scratch_type
+        if node in resources.keys() and "scratch_type" in resources[node].keys():
+            scratch_type = resources[node]["scratch_type"]
+
+        # check if type conversion is defined
+        scratch_use_as = check_scratch_use_as(config, scratch_type, node)
+
+        if scratch_use_as:
+            scratch_type = scratch_use_as
+
+        if scratch_type:
+            path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
+
             try:
-                if j.Variable_List["SCRATCHDIR"].startswith("/scratch"):
-                    os.rmdir(j.Variable_List["SCRATCHDIR"])
-                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty SCRATCHDIR: %s removed" % (j.id, j.Variable_List["SCRATCHDIR"]))
+                os.rmdir(path)
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty scratch: %s removed" % (j.id, path))
             except OSError as ex:
                 if ex.errno == os.errno.ENOTEMPTY:
-                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;SCRATCHDIR: %s not empty" % (j.id, j.Variable_List["SCRATCHDIR"]))
+                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch: %s not empty" % (j.id, path))
 
         conn = sqlite3.connect(sqlite_db)
         c = conn.cursor()
