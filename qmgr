@@ -163,3 +163,19 @@ set hook uvsize order = 2
 set hook uvsize debug = false
 set hook uvsize fail_action = none
 import hook uvsize application/x-python default /root/pbspro.hooks/hook_uvsize.py
+
+#
+# Create and define hook fairshare
+#
+create hook fairshare
+set hook fairshare type = site
+set hook fairshare enabled = true
+set hook fairshare event = periodic
+set hook fairshare event += execjob_begin
+set hook fairshare user = pbsadmin
+set hook fairshare alarm = 90
+set hook fairshare freq = 1800
+set hook fairshare order = 1
+set hook fairshare debug = false
+set hook fairshare fail_action = none
+import hook fairshare application/x-python default /root/pbspro.hooks/hook_fairshare.py
