@@ -146,6 +146,7 @@ class Discovery(object):
     def getandset_os(self):
         files_to_check = ["/etc/os-release"]
         lines = []
+        version_aliases = {"rhel7.6":"centos7"}
         os = ""
         version = ""
         try:
@@ -171,8 +172,11 @@ class Discovery(object):
         if os == "":
             return False
         else:
-            self.vnl[self.local_node].resources_available["os"] = os+version
-            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource os set to: %s" % (self.hook_name, os+version))
+            res_value = os+version
+            if res_value in version_aliases.keys():
+                res_value = version_aliases[res_value]
+            self.vnl[self.local_node].resources_available["os"] = res_value
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource os set to: %s" % (self.hook_name, res_value))
         return True
 
     ################################################
