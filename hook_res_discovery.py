@@ -1,6 +1,7 @@
 import pbs
 import os
 import json
+import re
 
 
 class Discovery(object):
@@ -37,7 +38,8 @@ class Discovery(object):
         if self.getandset_os() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set os resource" % self.hook_name)
 
-
+        if self.getandset_cuda_version() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set cuda_version resource" % self.hook_name)
 
     def run(self):
         if self.e.type in self.hook_events.keys():
@@ -173,7 +175,23 @@ class Discovery(object):
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource os set to: %s" % (self.hook_name, os+version))
         return True
 
+    ################################################
+    # cuda_version
+    ################################################
+    def getandset_cuda_version(self):
+        cuda_version = ""
+        try:
+            ret = os.popen("nvidia-smi -i 0 -q -x | grep cuda_version").read()
+            m = re.search(".*<cuda_version>(.+?)</cuda_version>.*", ret)
+            if m:
+                cuda_version = m.group(1)
+        except:
+            cuda_version = ""
 
+        if cuda_version and len(cuda_version):
+            self.vnl[self.local_node].resources_available["cuda_version"] = cuda_version
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cuda_version set to: %s" % (self.hook_name, cuda_version))
+        return True
 
 try:
     e = pbs.event()
