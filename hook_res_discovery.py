@@ -2,6 +2,7 @@ import pbs
 import os
 import json
 import re
+import subprocess
 
 
 class Discovery(object):
@@ -184,11 +185,14 @@ class Discovery(object):
     ################################################
     def getandset_cuda_version(self):
         cuda_version = ""
+        cmd = "/software/cuda/8.0/samples/bin/x86_64/linux/release/drv_ver"
         try:
-            ret = os.popen("nvidia-smi -i 0 -q -x | grep cuda_version").read()
-            m = re.search(".*<cuda_version>(.+?)</cuda_version>.*", ret)
-            if m:
-                cuda_version = m.group(1)
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            cuda_version = result.communicate()[0].strip()
+            returncode = result.returncode
+
+            if returncode != 0:
+                cuda_version=""
         except:
             cuda_version = ""
 
