@@ -124,6 +124,7 @@ create hook health-check
 set hook health-check type = site
 set hook health-check enabled = true
 set hook health-check event = exechost_periodic
+set hook health-check event += exechost_startup
 set hook health-check user = pbsadmin
 set hook health-check alarm = 90
 set hook health-check freq = 300

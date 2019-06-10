@@ -172,7 +172,7 @@ class HealthCheck(object):
         self.set_comment()
 
     def health_check(self):
-        if self.e.type == pbs.EXECHOST_PERIODIC:
+        if self.e.type == pbs.EXECHOST_PERIODIC or self.e.type == pbs.EXECHOST_STARTUP:
 
             self.call_hc(self.script)
 
