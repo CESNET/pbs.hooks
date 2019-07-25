@@ -177,10 +177,16 @@ class HealthCheck(object):
             self.call_hc(self.script)
 
             if self.rc == 0:
-                self.set_online()
+                if self.comment_prefix in self.node.comment:
+                    self.set_online()
+                else:
+                    pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; setting ONLINE skipped")
 
             if self.rc > 0:
-                self.set_offline()
+                if self.node.state != pbs.ND_OFFLINE:
+                    self.set_offline()
+                else:
+                    pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node already OFFLINE")
 
 if __name__ == "__builtin__":
     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; starting the node health-check")
