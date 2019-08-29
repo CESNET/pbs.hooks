@@ -180,3 +180,17 @@ set hook fairshare order = 1
 set hook fairshare debug = false
 set hook fairshare fail_action = none
 import hook fairshare application/x-python default /root/pbspro.hooks/hook_fairshare.py
+
+#
+# Create and define hook overcommit_detector
+#
+create hook overcommit_detector
+set hook overcommit_detector type = site
+set hook overcommit_detector enabled = true
+set hook overcommit_detector event = runjob
+set hook overcommit_detector user = pbsadmin
+set hook overcommit_detector alarm = 30
+set hook overcommit_detector order = 1
+set hook overcommit_detector debug = false
+set hook overcommit_detector fail_action = none
+import hook overcommit_detector application/x-python default /root/pbspro.hooks/hook_overcommit_detector.py
