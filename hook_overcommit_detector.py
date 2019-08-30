@@ -2,6 +2,8 @@ import pbs
 import re
 import smtplib
 import socket
+import os
+import time
 
 def sendmail(subject, body):
     sender = 'overcommit_detector@' + socket.getfqdn()
@@ -55,8 +57,23 @@ try:
                  requested_ncpus = 1
 
             if assigned_ncpus + requested_ncpus > available_ncpus:
+                now = time.strftime("%Y%m%d%H%M%S", time.gmtime())
+                jobs = []
+
+                filename = "/tmp/pbs_overcommit_detector_%s_%s_overcommit_by_%s" % (now, nodename, j.id)
+
                 msg = "overcommit_detector detected attempt to overcommit node %s by job %s" % (nodename, j.id)
+
                 sendmail("pbs overcommit detector", msg);
+
+                os.system("echo \"%s\" >> %s" % (msg, filename))
+                for i in node.jobs.split(','):
+                    jobid = i.strip().split('/')[0]
+                    if jobid in jobs:
+                        continue
+                    jobs.append(jobid)
+                    os.system("printjob %s >> %s" % (jobid, filename))
+
                 e.reject(msg)
 
 except SystemExit:
