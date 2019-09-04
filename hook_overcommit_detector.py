@@ -61,7 +61,7 @@ try:
                  requested_ncpus = 1
 
             if assigned_ncpus + requested_ncpus > available_ncpus:
-                now = time.strftime("%Y%m%d%H%M%S", time.gmtime())
+                now = time.strftime("%Y%m%d%H%M%S", time.localtime())
                 jobs = []
 
                 filename = "/tmp/pbs_overcommit_detector_%s_%s_overcommit_by_%s" % (now, nodename, j.id)
@@ -71,12 +71,13 @@ try:
                 sendmail("pbs overcommit detector", msg);
 
                 os.system("echo \"%s\" >> %s" % (msg, filename))
-                for i in node.jobs.split(','):
-                    jobid = i.strip().split('/')[0]
-                    if jobid in jobs:
-                        continue
-                    jobs.append(jobid)
-                    os.system("printjob %s >> %s" % (jobid, filename))
+                if node.jobs:
+                    for i in node.jobs.split(','):
+                        jobid = i.strip().split('/')[0]
+                        if jobid in jobs:
+                            continue
+                        jobs.append(jobid)
+                        os.system("printjob %s >> %s" % (jobid, filename))
 
                 e.reject(msg)
 
