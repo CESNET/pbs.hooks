@@ -44,6 +44,10 @@ try:
     e = pbs.event()
     if e.type == pbs.RUNJOB:
         j = e.job
+
+        if j.queue and re.match('^[RM]{1}[0-9]+', j.queue.name):
+            e.accept()
+
         resources = parse_exec_vnode(j.exec_vnode)
         for nodename in resources.keys():
             node = pbs.server().vnode(nodename)
