@@ -177,7 +177,7 @@ class HealthCheck(object):
             self.call_hc(self.script)
 
             if self.rc == 0:
-                if self.comment_prefix in self.node.comment:
+                if self.node.comment and (self.comment_prefix in self.node.comment):
                     self.set_online()
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; setting ONLINE skipped")
