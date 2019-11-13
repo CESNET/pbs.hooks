@@ -16,7 +16,7 @@ try:
         j = e.job
 
         if str(j.queue).split("@")[0] != "uv":
-			e.accept()
+            e.accept()
 
         reqncpus = 0
         reqmem = 0

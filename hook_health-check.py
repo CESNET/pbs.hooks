@@ -123,7 +123,7 @@ class HealthCheck(object):
                "Health-check hook; stdout: '%s' stderr: '%s'" % (str(stdout).replace("\n", " "), str(stderr).replace("\n", " ")))
 
         if stdout:
-            lines = stdout.strip().split("\n")
+            lines = stdout.decode('utf-8').strip().split("\n")
             self.comment = lines[len(lines)-1]
 
         if stderr:
@@ -188,11 +188,11 @@ class HealthCheck(object):
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node already OFFLINE")
 
-if __name__ == "__builtin__":
-    pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; starting the node health-check")
 
-    hc = HealthCheck(pbs.event())
-    if hc.file_check():
-        hc.health_check()
-    else:
-        pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; skipped")
+pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; starting the node health-check")
+
+hc = HealthCheck(pbs.event())
+if hc.file_check():
+    hc.health_check()
+else:
+    pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; skipped")

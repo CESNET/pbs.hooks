@@ -31,7 +31,7 @@ def run_file(fpath):
         new_env['HOSTNAME'] = socket.gethostname()
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=new_env)
         (out, err) = proc.communicate()
-        pbs.logmsg(pbs.EVENT_DEBUG, "external hook %s stdout: '%s' stderr: '%s'" % (fpath, out.replace("\n",","), err.replace("\n",",")))
+        pbs.logmsg(pbs.EVENT_DEBUG, "external hook %s stdout: %s stderr: %s" % (fpath, str(out), str(err)))
         pbs.logmsg(pbs.EVENT_DEBUG, "external hook ended with exitcode: %d" % proc.returncode)
     except Exception as error:
         pbs.logmsg(pbs.EVENT_DEBUG, "external hook %s failed: %s" % (fpath, str(error)))

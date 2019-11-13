@@ -74,12 +74,12 @@ try:
         # to call os.system and set them via qmgr
         os.environ["PBSPRO_IGNORE_KERBEROS"] = ""
         os.environ['PATH'] += ":/opt/pbs/bin/"
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_ncpus = {}\"", infrastructure_ncpus))
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_mem = {}kb\"", infrastructure_mem))
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_ngpus = {}\"", infrastructure_ngpus))
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_local = {}kb\"", infrastructure_scratch_local))
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_shared = {}kb\"", infrastructure_scratch_shared))
-        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_ssd = {}kb\"", infrastructure_scratch_ssd))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_ncpus = {}\"", int(infrastructure_ncpus)))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_mem = {}kb\"", int(infrastructure_mem)))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_ngpus = {}\"", int(infrastructure_ngpus)))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_local = {}kb\"", int(infrastructure_scratch_local)))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_shared = {}kb\"", int(infrastructure_scratch_shared)))
+        os.system(str.format("qmgr -c \"set server resources_default.infrastructure_scratch_ssd = {}kb\"", int(infrastructure_scratch_ssd)))
 
     if e.type == pbs.EXECJOB_BEGIN:
         job = pbs.event().job

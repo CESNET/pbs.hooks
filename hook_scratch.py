@@ -412,7 +412,8 @@ try:
 
                     write_deadsize(f_dead_size, dead_size)
 
-                    sys.exit()
+                    # we need thorough exit, otherwise, the pbs_python will continue to run
+                    os._exit(0)
 
                 if pid > 0:
                     # this is the parent, save the pid file
@@ -481,7 +482,8 @@ try:
 
                     write_deadsize(f_dead_size, dead_size)
 
-                    sys.exit()
+                    # we need thorough exit, otherwise, the pbs_python will continue to run
+                    os._exit(0)
 
                 if pid > 0:
                     # this is the parent, save the pid file
@@ -597,8 +599,8 @@ try:
                     if local_node in resources.keys() and "scratch_type" in resources[local_node].keys() and subtract_scratch == resources[local_node]["scratch_type"]:
                         dyn_res[scratch_i] -= resources[local_node][subtract_scratch]
 
-            vnl[local_node].resources_available[scratch_i] = pbs.size( "%skb" % dyn_res[scratch_i])
-            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, reporting %s %s %skb" % (local_node, scratch_i, dyn_res[scratch_i]))
+            vnl[local_node].resources_available[scratch_i] = pbs.size("%dkb" % int(dyn_res[scratch_i]))
+            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, reporting %s %s %dkb" % (local_node, scratch_i, int(dyn_res[scratch_i])))
 
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, reported %s" % str(dyn_res))
 

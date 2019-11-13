@@ -68,6 +68,8 @@ try:
 
                 msg = "overcommit_detector detected attempt to overcommit node %s by job %s" % (nodename, j.id)
 
+                e.reject(msg)
+
                 sendmail("pbs overcommit detector", msg);
 
                 os.system("echo \"%s\" >> %s" % (msg, filename))

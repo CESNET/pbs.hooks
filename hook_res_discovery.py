@@ -91,12 +91,12 @@ class Discovery(object):
         flags = []
         
         if not self.parse_cfg():
-			return False
+            return False
 
         if self.local_node in self.exclude_hosts["general"]:
-			pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags))) 
-			self.vnl[self.local_node].resources_available["cgroups"] = None
-			return True
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags))) 
+            self.vnl[self.local_node].resources_available["cgroups"] = None
+            return True
 		
         for flag in self.cgroups_types:
             if os.path.isdir("/sys/fs/cgroup/%s" % flag) and self.local_node not in self.exclude_hosts[flag]:
