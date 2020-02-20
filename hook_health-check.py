@@ -183,7 +183,7 @@ class HealthCheck(object):
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; setting ONLINE skipped")
 
             if self.rc > 0:
-                if self.node.state != pbs.ND_OFFLINE:
+                if not (self.node.state & pbs.ND_OFFLINE):
                     self.set_offline()
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node already OFFLINE")
