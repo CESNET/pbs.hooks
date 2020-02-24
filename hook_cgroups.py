@@ -1565,9 +1565,10 @@ class NodeUtils(object):
         cpuinfo['hyperthreads_per_core'] = 1
         cpuinfo['hyperthreads'] = []
         # Now try to construct a dictionary with hyperthread information
-        # if this is an Intel based processor
+        # if this is an Intel or AMD EPYC based processor
         try:
-            if 'Intel' in cpuinfo['cpu'][0]['vendor_id']:
+            if 'Intel' in cpuinfo['cpu'][0]['vendor_id'] or \
+               ('AMD' in cpuinfo['cpu'][0]['vendor_id'] and 'EPYC' in  cpuinfo['cpu'][0]['model name'].upper()):
                 if 'ht' in cpuinfo['cpu'][0]['flags']:
                     cpuinfo['hyperthreads_per_core'] = \
                         cpuinfo['cpu'][0]['siblings'] / \
