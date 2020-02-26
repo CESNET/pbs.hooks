@@ -24,7 +24,7 @@ def run_file(fpath):
         pbs.logmsg(pbs.EVENT_DEBUG, "external hook started: %s" % fpath)
         command = fpath
         #new_env = os.environ.copy()
-        new_env = j.Variable_List
+        new_env = {}
         new_env['JOBID'] = j.id
         new_env['USER'] = j.euser #Job_Owner.split("@")[0]
         new_env['GROUP'] = j.egroup
