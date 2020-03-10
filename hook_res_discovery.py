@@ -147,7 +147,7 @@ class Discovery(object):
     def getandset_os(self):
         files_to_check = ["/etc/os-release"]
         lines = []
-        version_aliases = {"rhel7.6":"centos7"}
+        version_aliases = {"rhel7":"centos7"}
         os = ""
         version = ""
         try:
@@ -165,7 +165,7 @@ class Discovery(object):
                 if line[0] == "ID":
                     os = line[1].replace('"','').strip()
                 if line[0] == "VERSION_ID":
-                    version = line[1].replace('"','').strip()
+                    version = line[1].replace('"','').strip().split(".")[0]
         except Exception as err:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_os error: %s" % (self.hook_name, str(err)))
             return False
