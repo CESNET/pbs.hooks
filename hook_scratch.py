@@ -37,6 +37,9 @@ def parse_cfg():
             return config
 
         for j in config[i].keys():
+            if j == "disabled":
+                continue
+
             if not j in scratch_types.keys():
                 pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook; failed to parse config file, incorrect scratch type %s" % str(j))
 
@@ -572,6 +575,9 @@ try:
 
             if scratch_i in config.keys():
                 for scratch_as in config[scratch_i]:
+                    if scratch_as == "disabled":
+                        continue
+
                     if local_node in config[scratch_i][scratch_as]:
                         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, using %s as %s" % (scratch_as, scratch_i))
                         scratch_use_as = scratch_as
@@ -598,6 +604,11 @@ try:
                     resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode)
                     if local_node in resources.keys() and "scratch_type" in resources[local_node].keys() and subtract_scratch == resources[local_node]["scratch_type"]:
                         dyn_res[scratch_i] -= resources[local_node][subtract_scratch]
+
+            if scratch_i in config.keys():
+                if "disabled" in config[scratch_i]:
+                    if local_node in config[scratch_i]["disabled"]:
+                        dyn_res[scratch_i] = 0
 
             vnl[local_node].resources_available[scratch_i] = pbs.size("%dkb" % int(dyn_res[scratch_i]))
             pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, reporting %s %s %dkb" % (local_node, scratch_i, int(dyn_res[scratch_i])))
