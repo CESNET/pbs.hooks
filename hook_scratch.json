@@ -19,7 +19,7 @@
         },
         "scratch_shared":
         {
-                "disabled": ["doom1", "doom2", "doom3", "doom4", "doom5", "doom6", "doom7", "doom8", "doom9", "doom10", "doom11", "doom12", "doom13", "doom14", "doom15", "doom16", "doom17", "doom18", "doom19", "doom20", "doom21", "doom22", "doom23", "doom24", "doom25", "doom26", "doom27", "doom28", "doom29"]
+                "disabled": []
         }
 
 }
