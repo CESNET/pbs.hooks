@@ -43,7 +43,7 @@ try:
                             ompthreads = 1
                     except:
                         ompthreads = 1
-                    i += ":ompthreads=%s" % ompthreads
+                    i += ":ompthreads=%d" % ompthreads
 
                 elif not mpiprocs and ompthreads:
                     try:
