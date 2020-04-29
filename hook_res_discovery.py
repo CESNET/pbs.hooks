@@ -39,6 +39,9 @@ class Discovery(object):
         if self.getandset_os() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set os resource" % self.hook_name)
 
+        if self.getandset_osfamily() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set osfamily resource" % self.hook_name)
+
         if self.getandset_cuda_version() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set cuda_version resource" % self.hook_name)
 
@@ -178,6 +181,42 @@ class Discovery(object):
                 res_value = version_aliases[res_value]
             self.vnl[self.local_node].resources_available["os"] = res_value
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource os set to: %s" % (self.hook_name, res_value))
+        return True
+
+    ################################################
+    # osfamily
+    ################################################
+    def getandset_osfamily(self):
+        files_to_check = ["/etc/os-release"]
+        lines = []
+        version_aliases = {"centos":"redhat", "rhel":"redhat"}
+        osfamily = ""
+        try:
+            for file in files_to_check:
+                with open(file) as f:
+                    l = f.readlines()
+                lines += l
+        except Exception as err:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_osfamily error: %s" % (self.hook_name, str(err)))
+            pass
+
+        try:
+            for line in lines:
+                line = line.split("=");
+                if line[0] == "ID":
+                    osfamily = line[1].replace('"','').strip()
+        except Exception as err:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_osfamily error: %s" % (self.hook_name, str(err)))
+            return False
+
+        if osfamily == "":
+            return False
+        else:
+            res_value = osfamily
+            if res_value in version_aliases.keys():
+                res_value = version_aliases[res_value]
+            self.vnl[self.local_node].resources_available["osfamily"] = res_value
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource osfamily set to: %s" % (self.hook_name, res_value))
         return True
 
     ################################################
