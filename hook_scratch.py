@@ -9,6 +9,7 @@ import grp
 import json
 import socket
 import time
+import errno
 
 job_deadsize_refresh = 86400 # 86400 = 1 day
 nonjob_deadsize_refresh = 7200 # 7200 = 2 hours
@@ -258,7 +259,7 @@ try:
                 os.rmdir(path)
                 pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty scratch: %s removed" % (j.id, path))
             except OSError as ex:
-                if ex.errno == os.errno.ENOTEMPTY:
+                if ex.errno == errno.ENOTEMPTY:
                     pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch: %s not empty" % (j.id, path))
 
         conn = sqlite3.connect(sqlite_db)
