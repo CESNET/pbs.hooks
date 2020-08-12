@@ -194,3 +194,18 @@ set hook overcommit_detector order = 1
 set hook overcommit_detector debug = false
 set hook overcommit_detector fail_action = none
 import hook overcommit_detector application/x-python default /root/pbspro.hooks/hook_overcommit_detector.py
+
+#
+# Create and define hook node_owner
+#
+create hook node_owner
+set hook node_owner type = site
+set hook node_owner enabled = true
+set hook node_owner event = queuejob
+set hook node_owner user = pbsadmin
+set hook node_owner alarm = 60
+set hook node_owner order = 1
+set hook node_owner debug = false
+set hook node_owner fail_action = none
+import hook node_owner application/x-python default /root/pbspro.hooks/hook_node_owner.py
+import hook node_owner application/x-config default /root/pbspro.hooks/hook_node_owner.json
