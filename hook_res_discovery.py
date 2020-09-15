@@ -45,6 +45,9 @@ class Discovery(object):
         if self.getandset_cuda_version() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set cuda_version resource" % self.hook_name)
 
+        if self.getandset_cpu_vendor() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set cpu_vendor resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -238,6 +241,43 @@ class Discovery(object):
         if cuda_version and len(cuda_version):
             self.vnl[self.local_node].resources_available["cuda_version"] = cuda_version
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cuda_version set to: %s" % (self.hook_name, cuda_version))
+        return True
+
+    ################################################
+    # cpu_vendor
+    ################################################
+    def getandset_cpu_vendor(self):
+        files_to_check = ["/proc/cpuinfo"]
+        lines = []
+        version_aliases = {"GenuineIntel":"intel", "AuthenticAMD":"amd"}
+        cpu_vendor = ""
+        try:
+            for file in files_to_check:
+                with open(file) as f:
+                    l = f.readlines()
+                lines += l
+        except Exception as err:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_cpu_vendor error: %s" % (self.hook_name, str(err)))
+            pass
+
+        try:
+            for line in lines:
+                line = line.split(":");
+                if line[0].strip() == "vendor_id":
+                    cpu_vendor = line[1].strip()
+                    break
+        except Exception as err:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_cpu_vendor error: %s" % (self.hook_name, str(err)))
+            return False
+
+        if cpu_vendor == "":
+            return False
+        else:
+            res_value = cpu_vendor
+            if res_value in version_aliases.keys():
+                res_value = version_aliases[res_value]
+            self.vnl[self.local_node].resources_available["cpu_vendor"] = res_value
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cpu_vendor set to: %s" % (self.hook_name, res_value))
         return True
 
 try:
