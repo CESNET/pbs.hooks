@@ -230,7 +230,7 @@ class Discovery(object):
         cmd = "/software/cuda/8.0/samples/bin/x86_64/linux/release/drv_ver"
         try:
             result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-            cuda_version = result.communicate()[0].strip()
+            cuda_version = result.communicate()[0].decode("utf-8").strip()
             returncode = result.returncode
 
             if returncode != 0:
