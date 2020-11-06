@@ -26,7 +26,7 @@
                                    "phi3", "phi6", "phi2", "phi1", "phi4", "phi5", "zebra11a", "zebra7a", "zebra10a", "zebra6b", "zebra9a", "zebra9b", "zefron4", "zebra12a", "zefron8", "zefron2", "zigur12", "zigur6", "zigur26", "zigur25", "zigur29", "zigur7", "zigur27", "zigur19", "zigur23", "zigur20", "zigur18", "zigur10", "zigur24", "zigur14", "zapat27", "zapat98", "zigur8", "zelda1", "zelda2", "zelda3", "zelda4", "zelda5", "zelda6", "zelda7", "zelda8", "zelda9", "zelda10", "glados1", "glados2", "glados3", "glados4", "glados5", "glados6", "glados7", "glados8", "glados9", "glados10", "glados11", "glados12", "glados13", "glados14", "glados15", "glados16", "glados17"
                                    ],
             "exclude_vntypes"    : [],
-            "mem_fences"         : true,
+            "mem_fences"         : false,
             "mem_hardwall"       : false,
             "memory_spread_page" : false
         },
