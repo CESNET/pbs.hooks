@@ -18,11 +18,15 @@ try:
             node_i = i.split(":")[0].split(".")[0]
 
             if not node_i in resources.keys():
-                resources[node_i] = {"ncpus":0, "mem":0}
+                resources[node_i] = {"ncpus":0, "mem":0, "ngpus":0}
 
             m = re.search('ncpus=([0-9]+)', i)
             if m:
                 resources[node_i]["ncpus"] += int(m.group(1))
+
+            m = re.search('ngpus=([0-9]+)', i)
+            if m:
+                resources[node_i]["ngpus"] += int(m.group(1))
 
             m = re.search('mem=([0-9]+)kb', i)
             if m:
@@ -37,6 +41,7 @@ try:
             j.Variable_List["PBS_NUM_PPN"] = resources[node]["ncpus"]
             j.Variable_List["PBS_NCPUS"] = resources[node]["ncpus"]
             j.Variable_List["TORQUE_RESC_PROC"] = resources[node]["ncpus"]
+            j.Variable_List["PBS_NGPUS"] = resources[node]["ngpus"]
 
         total_mem = 0
         for node_i in resources.keys():
