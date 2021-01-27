@@ -1,5 +1,6 @@
 import pbs
 import re
+import math
 
 try:
     e = pbs.event()
@@ -34,11 +35,13 @@ try:
                     ompthreads = int(m.group(1))
 
                 if not mpiprocs and not ompthreads:
-                    i += ":mpiprocs=%d:ompthreads=1" % ncpus
+                    mpiprocs = ncpus
+                    ompthreads = 1
+                    i += ":mpiprocs=%d:ompthreads=1" % mpiprocs
 
                 elif mpiprocs and not ompthreads:
                     try:
-                        ompthreads = ncpus/mpiprocs
+                        ompthreads = math.ceil(ncpus/mpiprocs)
                         if not ompthreads:
                             ompthreads = 1
                     except:
@@ -47,7 +50,7 @@ try:
 
                 elif not mpiprocs and ompthreads:
                     try:
-                        mpiprocs = ncpus/ompthreads
+                        mpiprocs = math.ceil(ncpus/ompthreads)
                         if not mpiprocs:
                             mpiprocs = 1
                     except:
@@ -55,6 +58,9 @@ try:
                     i += ":mpiprocs=%d" % mpiprocs
 
                 newselect.append(i)
+
+                if (mpiprocs * ompthreads > ncpus):
+                    e.reject("Incorrect select: mpiprocs * ompthreads > ncpus. Please, check qsub parameters.")
 
             pbs.logmsg(pbs.LOG_DEBUG, "Old select: %s" % str(j.Resource_List))
             j.Resource_List["select"] = pbs.select("+".join(newselect))
