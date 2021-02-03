@@ -12,6 +12,14 @@ units = ["kb", "mb", "gb", "tb"]
 
 try:
     e = pbs.event()
+    if e.type == pbs.MOVEJOB:
+        j = e.job
+
+        if str(j.queue).split("@")[0] != "uv":
+            e.accept()
+
+        e.reject("Can not move the job into the queue 'uv'. Please, submit directly.")
+
     if e.type == pbs.QUEUEJOB:
         j = e.job
 

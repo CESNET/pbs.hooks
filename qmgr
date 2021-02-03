@@ -158,6 +158,7 @@ create hook uvsize
 set hook uvsize type = site
 set hook uvsize enabled = true
 set hook uvsize event = queuejob
+set hook uvsize event += movejob
 set hook uvsize user = pbsadmin
 set hook uvsize alarm = 60
 set hook uvsize order = 2
