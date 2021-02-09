@@ -19,6 +19,12 @@ try:
                 ompthreads = 0
                 mpiprocs = 0
 
+                m = re.search('.*os=debian([0-9]+).*', i)
+                if m:
+                    debversion = int(m.group(1))
+                    if (debversion < 10):
+                        e.reject("Unsupported debian version.")
+
                 m = re.search('.*ncpus=([0-9]+).*', i)
                 if m:
                     ncpus = int(m.group(1))
