@@ -2,10 +2,33 @@ import pbs
 import re
 import math
 
+max_walltime = 172800
+min_mem = 524288000
+
 try:
     e = pbs.event()
     if e.type == pbs.QUEUEJOB:
         j = e.job
+        if j.Resource_List["walltime"] != None:
+            splitwalltime = str(j.Resource_List["walltime"]).split(":")
+            sec = 0
+            min2sec = 0
+            hour2sec = 0
+
+            if len(splitwalltime) == 1:
+                sec = int(splitwalltime[0])
+
+            if len(splitwalltime) == 2:
+                min2sec = int(splitwalltime[0]) * 60
+                sec = int(splitwalltime[1])
+
+            if len(splitwalltime) == 3:
+                hour2sec = int(splitwalltime[0]) * 60 * 60
+                min2sec = int(splitwalltime[1]) * 60
+                sec = int(splitwalltime[2])
+
+            if (sec + min2sec + hour2sec) > max_walltime:
+                e.accept()
 
         if "select" in j.Resource_List.keys():
             mem = 0 # KB
@@ -46,7 +69,7 @@ try:
                 if m:
                     e.accept()
 
-            if mem >= 524288000:
+            if mem >= min_mem:
                 j.queue = pbs.server().queue("large_mem")
 
 except SystemExit:

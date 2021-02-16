@@ -220,4 +220,4 @@ set hook meta-pbs_large_mem alarm = 60
 set hook meta-pbs_large_mem order = 1
 set hook meta-pbs_large_mem debug = false
 set hook meta-pbs_large_mem fail_action = none
-import hook job-enqueued application/x-python default /root/pbspro.hooks/hook_meta-pbs_large_mem.py
+import hook meta-pbs_large_mem application/x-python default /root/pbspro.hooks/hook_meta-pbs_large_mem.py
