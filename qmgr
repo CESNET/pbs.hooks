@@ -210,3 +210,14 @@ set hook node_owner debug = false
 set hook node_owner fail_action = none
 import hook node_owner application/x-python default /root/pbspro.hooks/hook_node_owner.py
 import hook node_owner application/x-config default /root/pbspro.hooks/hook_node_owner.json
+
+create hook meta-pbs_large_mem
+set hook meta-pbs_large_mem type = site
+set hook meta-pbs_large_mem enabled = true
+set hook meta-pbs_large_mem event = queuejob
+set hook meta-pbs_large_mem user = pbsadmin
+set hook meta-pbs_large_mem alarm = 60
+set hook meta-pbs_large_mem order = 1
+set hook meta-pbs_large_mem debug = false
+set hook meta-pbs_large_mem fail_action = none
+import hook job-enqueued application/x-python default /root/pbspro.hooks/hook_meta-pbs_large_mem.py
