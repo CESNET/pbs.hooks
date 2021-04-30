@@ -4473,7 +4473,7 @@ class CgroupUtils(object):
             with open(self._cgroup_path('memory', 'limit_in_bytes',
                                         jobid), 'r') as desc:
                 limit = int(desc.readline().strip())
-            if (max > limit and max<limit+4*1024*1024):
+            if (max > limit and max<limit+8*1024*1024):
                 return limit
             else:
                 return max
