@@ -2526,6 +2526,34 @@ class CgroupUtils(object):
                        (caller_name(), os.path.basename(slicefile)))
             raise
 
+    def _set_slice_property(self, property, value, jobid=None):
+        """
+        Update cgroup slice property (so that systemd does not spoil them upon reload)
+        """
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        if self.systemd_version < 205:
+            return
+        if jobid:
+            description = 'PBS Pro job %s' % jobid
+            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
+                                     self._jobid_to_systemd_subdir(jobid))
+        else:
+            description = 'PBS Pro parent'
+            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
+                                     self.cfg['cgroup_prefix'] + '.slice')
+        try:
+            cmd = ['systemctl', 'set-property', os.path.basename(slicefile),
+                  '%s=%s' % (property, value) ]
+            process = subprocess.Popen(cmd, shell=False,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            out, err = process.communicate()
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG,
+                       '%s: Failed to set systemd slice property: %s %s=%s' %
+                       (caller_name(), os.path.basename(slicefile), property, value))
+            raise
+
     def _delete_slice(self, jobid=None):
         """
         Delete the cgroup slice for the parent or job
@@ -3647,6 +3675,7 @@ class CgroupUtils(object):
             if 'memory' in self.subsystems:
                 path = self._cgroup_path('memory', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
+                self._set_slice_property('MemoryMax', str(size_as_int(value)), jobid)
         elif resource == 'softmem':
             if 'memory' in self.subsystems:
                 path = self._cgroup_path('memory', 'soft_limit_in_bytes',
