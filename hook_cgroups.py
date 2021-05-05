@@ -2507,7 +2507,9 @@ class CgroupUtils(object):
                 desc.write('[Unit]\n'
                            'Description=%s\n'
                            '[Slice]\n'
-                           'Delegate=yes\n'
+                           'DeviceAllow=/dev/nvidiactl\n'
+                           'DeviceAllow=/dev/nvidia-uvm\n'
+                           'CPUShares=1024\n'
                            'TasksMax=infinity\n' % description)
                 desc.truncate()
         except Exception:
@@ -2542,7 +2544,7 @@ class CgroupUtils(object):
             slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
                                      self.cfg['cgroup_prefix'] + '.slice')
         try:
-            cmd = ['systemctl', 'set-property', os.path.basename(slicefile),
+            cmd = ['systemctl', 'set-property', '--runtime', os.path.basename(slicefile),
                   '%s=%s' % (property, value) ]
             process = subprocess.Popen(cmd, shell=False,
                                        stdout=subprocess.PIPE,
@@ -3741,6 +3743,11 @@ class CgroupUtils(object):
                 with open(path, 'r') as desc:
                     output = desc.readlines()
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'devices.list: %s' % output)
+        elif resource == 'device_names':
+                device_names = value
+                for key in device_names:
+                    self._set_slice_property('DeviceAllow', '/dev/%s' % (key), jobid)
+                    pbs.logmsg(pbs.EVENT_DEBUG4, 'adding DeviceAllow=/dev/%s' % (key))
         else:
             pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Resource %s not handled' %
                        (caller_name(), resource))
@@ -4110,11 +4117,22 @@ class CgroupUtils(object):
             else:
                 pbs.logmsg(pbs.EVENT_DEBUG2,
                            'Key: %s not found in assigned' % key)
+        # Initialize devices variables
+        key = 'device_names'
+        if 'devices' in self.subsystems:
+            if key in assigned:
+                hostresc[key] = assigned[key]
+            else:
+                pbs.logmsg(pbs.EVENT_DEBUG2,
+                           'Key: %s not found in assigned' % key)
         # Apply the resource limits to the cgroups
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Setting cgroup limits for: %s' %
                    (caller_name(), hostresc))
         # The vmem limit must be set after the mem limit, so sort the keys
-        for resc in sorted(hostresc):
+        resorder = sorted(hostresc)
+        resorder.append('devices')
+        resorder.remove('devices')
+        for resc in resorder:
             self.set_limit(resc, hostresc[resc], jobid)
         # Set additional parameters
         if cpuset_enabled:
