@@ -38,7 +38,9 @@
                 "b *:* rwm",
                 "c *:* rwm",
 				["nvidiactl", "rwm", "*"],
-				["nvidia-uvm", "rwm"]
+				["nvidia-uvm", "rwm"],
+				["loop", "rwm", "*"],
+				["loop-control", "rwm"]
             ]
         },
         "hugetlb" : {

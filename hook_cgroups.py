@@ -2509,6 +2509,10 @@ class CgroupUtils(object):
                            '[Slice]\n'
                            'DeviceAllow=/dev/nvidiactl\n'
                            'DeviceAllow=/dev/nvidia-uvm\n'
+                           'DeviceAllow=block-loop\n'
+                           'DeviceAllow=/dev/loop-control\n'
+                           'DeviceAllow=/dev/fuse\n'
+                           'DeviceAllow=/dev/net/tun\n'
                            'CPUShares=1024\n'
                            'TasksMax=infinity\n' % description)
                 desc.truncate()
