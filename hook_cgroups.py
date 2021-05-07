@@ -3091,6 +3091,7 @@ class CgroupUtils(object):
                    devices_allow)
         for item in devices_allow:
             if isinstance(item, str):
+                self.write_value(self._cgroup_path('devices', 'allow'), item)
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'string item: %s' % item)
                 self.write_value(devices_allow_file, item)
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'write_value: %s' % value)
@@ -3742,6 +3743,7 @@ class CgroupUtils(object):
                 pbs.logmsg(pbs.EVENT_DEBUG4,
                            'Setting devices: %s for %s' % (devices, jobid))
                 for dev in devices:
+                    self.write_value(self._cgroup_path('devices', 'allow'), dev)
                     self.write_value(path, dev)
                 path = self._cgroup_path('devices', 'list', jobid)
                 with open(path, 'r') as desc:
