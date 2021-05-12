@@ -2509,6 +2509,8 @@ class CgroupUtils(object):
                            '[Slice]\n'
                            'DeviceAllow=/dev/nvidiactl\n'
                            'DeviceAllow=/dev/nvidia-uvm\n'
+                           'DeviceAllow=/dev/nvidia-uvm-tools\n'
+                           'DeviceAllow=/dev/nvidia-modeset\n'
                            'DeviceAllow=block-loop\n'
                            'DeviceAllow=/dev/loop-control\n'
                            'DeviceAllow=/dev/fuse\n'

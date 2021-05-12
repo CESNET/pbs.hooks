@@ -39,6 +39,8 @@
                 "c *:* rwm",
 				["nvidiactl", "rwm", "*"],
 				["nvidia-uvm", "rwm"],
+				["nvidia-uvm-tools", "rwm"],
+				["nvidia-modeset", "rwm"],
 				["loop", "rwm", "*"],
 				["loop-control", "rwm"]
             ]
