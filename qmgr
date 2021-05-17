@@ -84,7 +84,7 @@ set hook external-hooks event += execjob_epilogue
 set hook external-hooks event += execjob_end
 set hook external-hooks user = pbsadmin
 set hook external-hooks alarm = 300
-set hook external-hooks order = 5
+set hook external-hooks order = 15
 set hook external-hooks debug = false
 set hook external-hooks fail_action = none
 import hook external-hooks application/x-python default /root/pbspro.hooks/hook_external-hooks.py
