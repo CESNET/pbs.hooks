@@ -1,7 +1,6 @@
 import pbs
 import sys
 import re
-import sqlite3
 import datetime
 import os
 import pwd
@@ -14,7 +13,6 @@ import errno
 job_deadsize_refresh = 86400 # 86400 = 1 day
 nonjob_deadsize_refresh = 7200 # 7200 = 2 hours
 dead_size_filename = ".dead.size"
-sqlite_db="/var/spool/pbs/resources.db"
 scratch_paths = {"scratch_local":"scratch", "scratch_ssd":"scratch.ssd", "scratch_shared": "scratch.shared"}
 scratch_types = {"scratch_local":"local", "scratch_ssd":"ssd", "scratch_shared": "shared"}
 
@@ -149,21 +147,6 @@ try:
                 pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, 0kb scratch requested, scratch hook stopped")
                 e.accept()
 
-            #zapamatovani resourcu v tabulce sqlite
-            conn = sqlite3.connect(sqlite_db)
-            c = conn.cursor()
-
-            # pokud tabulka neexistuje, tak ji vytvorim
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='resources'");
-            if c.fetchone() == None:
-                c.execute("CREATE TABLE resources (date text, job_id text, job_owner text, resource_type text, value integer)")
-
-            #vlozim scratch do tabulky a koncim
-            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            c.execute("INSERT INTO resources VALUES ('%s', '%s', '%s', '%s', %d)" % (now, j.id, j.Job_Owner, scratch_type, scratch_size))
-            conn.commit()
-            conn.close()
-
             # vytvoreni adresare - fixed by Petr Kulhanek
             user = j.Job_Owner.split("@")[0]
             # FIXME
@@ -261,14 +244,6 @@ try:
             except OSError as ex:
                 if ex.errno == errno.ENOTEMPTY:
                     pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch: %s not empty" % (j.id, path))
-
-        conn = sqlite3.connect(sqlite_db)
-        c = conn.cursor()
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='resources'");
-        if c.fetchone() != None:
-            c.execute("DELETE FROM resources WHERE job_id='%s'" % j.id)
-        conn.commit()
-        conn.close()
 
 
 
