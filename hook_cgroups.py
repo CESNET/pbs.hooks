@@ -2515,6 +2515,9 @@ class CgroupUtils(object):
                            'DeviceAllow=/dev/loop-control\n'
                            'DeviceAllow=/dev/fuse\n'
                            'DeviceAllow=/dev/net/tun\n'
+                           'DeviceAllow=/dev/infiniband/rdma_cm\n'
+                           'DeviceAllow=char-infiniband_verbs\n'
+                           'DeviceAllow=char-infiniband_cm\n'
                            'CPUShares=1024\n'
                            'TasksMax=infinity\n' % description)
                 desc.truncate()
