@@ -4737,8 +4737,9 @@ class CgroupUtils(object):
                 if jobid in jobdict:
                     del jobdict[jobid]
                     fd.seek(0)
+                    fd.truncate(0)
                     fd.write(str(jobdict))
-                    fd.truncate()
+                fd.close()
         except IOError:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Failed to open cgroup_jobs file')
             raise
