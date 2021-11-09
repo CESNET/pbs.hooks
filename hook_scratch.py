@@ -9,12 +9,14 @@ import json
 import socket
 import time
 import errno
+import shutil
 
 job_deadsize_refresh = 86400 # 86400 = 1 day
 nonjob_deadsize_refresh = 7200 # 7200 = 2 hours
 dead_size_filename = ".dead.size"
-scratch_paths = {"scratch_local":"scratch", "scratch_ssd":"scratch.ssd", "scratch_shared": "scratch.shared"}
-scratch_types = {"scratch_local":"local", "scratch_ssd":"ssd", "scratch_shared": "shared"}
+scratch_paths = {"scratch_local":"scratch", "scratch_ssd":"scratch.ssd", "scratch_shared": "scratch.shared", "scratch_shm": "scratch.shm"}
+scratch_types = {"scratch_local":"local", "scratch_ssd":"ssd", "scratch_shared": "shared", "scratch_shm": "shm"}
+scratch_shm_dir = "/dev/shm"
 
 
 
@@ -51,7 +53,7 @@ def parse_cfg():
 
 
 
-def parse_exec_vnode(exec_vnode):
+def parse_exec_vnode(exec_vnode, schedselect):
     resources = {}
     for i in str(exec_vnode).split("+"):
         i = i.replace("(","")
@@ -70,6 +72,15 @@ def parse_exec_vnode(exec_vnode):
                     resources[node_i][scratch_i] = 0
                 resources[node_i][scratch_i] += int(m.group(1))
                 resources[node_i]["scratch_type"] = scratch_i
+
+        if schedselect:
+            m = re.search('scratch_shm=[tT]rue', str(schedselect))
+            if m:
+                resources[node_i]["scratch_type"] = "scratch_shm"
+                resources[node_i]["scratch_shm"] = 409600
+                m = re.search('mem=([0-9]+?)kb', i)
+                if m:
+                    resources[node_i]["scratch_shm"] = int(m.group(1))
 
     return resources
 
@@ -112,6 +123,16 @@ try:
             else:
                 j.Resource_List["place"] = pbs.place("group=cluster")
 
+        if "select" in j.Resource_List.keys():
+            m = re.search('.*scratch_shm=[Tt]rue.*', str(j.Resource_List["select"]))
+            if m:
+                for scratch_i in scratch_types.keys():
+                    if scratch_i == "scratch_shm":
+                        continue
+
+                    if scratch_i in str(j.Resource_List["select"]):
+                        e.reject("can not combine %s and scratch_shm" % scratch_i)
+
 
 
     if e.type == pbs.EXECJOB_BEGIN:
@@ -123,8 +144,9 @@ try:
 
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, node: %s" % node)
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s has exec_vnode: %s" % (j.id, str(j.exec_vnode)))
+        pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s has schedselect: %s" % (j.id, str(j.schedselect)))
         
-        resources = parse_exec_vnode(j.exec_vnode)
+        resources = parse_exec_vnode(j.exec_vnode, j.schedselect)
 
         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, %s scratch resources: %s" % (j.id, str(resources)))
 
@@ -160,8 +182,14 @@ try:
 
             path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
 
+            if scratch_type == "scratch_shm":
+                path = scratch_shm_dir + path
+
             try:
-                os.mkdir(path)
+                if scratch_type == "scratch_shm":
+                    os.makedirs(path)
+                else:
+                    os.mkdir(path)
                 uid = pwd.getpwnam(user).pw_uid
                 gid = pwd.getpwnam(user).pw_gid
                 if group:
@@ -221,7 +249,7 @@ try:
         j = e.job
         node = pbs.get_local_nodename()
         user = j.Job_Owner.split("@")[0]
-        resources = parse_exec_vnode(j.exec_vnode)
+        resources = parse_exec_vnode(j.exec_vnode, j.schedselect)
 
         config = parse_cfg()
 
@@ -238,12 +266,19 @@ try:
         if scratch_type:
             path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
 
-            try:
-                os.rmdir(path)
-                pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty scratch: %s removed" % (j.id, path))
-            except OSError as ex:
-                if ex.errno == errno.ENOTEMPTY:
-                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch: %s not empty" % (j.id, path))
+            if scratch_type == "scratch_shm":
+                path = scratch_shm_dir + path
+                try:
+                    shutil.rmtree(path)
+                except:
+                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch shm: %s failed to clear" % (j.id, path))
+            else:
+                try:
+                    os.rmdir(path)
+                    pbs.logmsg(pbs.EVENT_DEBUG, "%s;Empty scratch: %s removed" % (j.id, path))
+                except OSError as ex:
+                    if ex.errno == errno.ENOTEMPTY:
+                        pbs.logmsg(pbs.EVENT_DEBUG, "%s;scratch: %s not empty" % (j.id, path))
 
 
 
@@ -527,7 +562,7 @@ try:
             reserved = 0
             for job in pbs.event().job_list.keys():
                 local_node = pbs.get_local_nodename()
-                resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode)
+                resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode, None)
                 if local_node in resources.keys() and "scratch_type" in resources[local_node].keys() and scratch_type == resources[local_node]["scratch_type"]:
                     reserved = resources[local_node][scratch_type]
 
@@ -558,6 +593,14 @@ try:
                         pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, using %s as %s" % (scratch_as, scratch_i))
                         scratch_use_as = scratch_as
 
+            # scratch shm is only boolean, no size
+            if (scratch_i == "scratch_shm"):
+                if os.path.isdir(scratch_shm_dir):
+                    vnl[local_node].resources_available[scratch_i] = True
+                else:
+                    vnl[local_node].resources_available[scratch_i] = False
+                continue
+
             # get the scratch size without dead space
             dyn_res[scratch_i] = get_avail(scratch_use_as, pbs.event().job_list.keys())
 
@@ -577,7 +620,7 @@ try:
             # second, the actual subtract
             if subtract_scratch:
                 for job in pbs.event().job_list.keys():
-                    resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode)
+                    resources = parse_exec_vnode(pbs.event().job_list[job].exec_vnode, None)
                     if local_node in resources.keys() and "scratch_type" in resources[local_node].keys() and subtract_scratch == resources[local_node]["scratch_type"]:
                         dyn_res[scratch_i] -= resources[local_node][subtract_scratch]
 
