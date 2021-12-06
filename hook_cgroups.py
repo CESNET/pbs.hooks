@@ -4743,15 +4743,22 @@ class CgroupUtils(object):
         try:
             with open(self.cgroup_jobs_file, 'r+') as fd:
                 jobdict = eval(fd.read())
+                if not isinstance(jobdict, dict):
+                    pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted '
+                               'cgroup_jobs; emptying it')
+                    jobdict = dict()
                 if jobid in jobdict:
                     del jobdict[jobid]
                     fd.seek(0)
-                    fd.truncate(0)
                     fd.write(str(jobdict))
-                fd.close()
+                    fd.truncate()
         except IOError:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Failed to open cgroup_jobs file')
             raise
+        except SyntaxError:
+            pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted cgroup_jobs; '
+                                        'emptying it')
+            self.empty_cgroup_jobs_file()
 
     def read_cgroup_jobs(self):
         """
