@@ -5,7 +5,7 @@ import math
 route_resource_name = "uvsize"
 default_mem_chunk = 409600 # 400mb in kb
 
-min_ncpus_for_large = 144 #ncpus
+min_ncpus_for_large = 100 #ncpus
 min_mem_for_large = 1073741824 # 1tb in kb
 
 units = ["kb", "mb", "gb", "tb"]   
