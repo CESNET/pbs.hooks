@@ -81,6 +81,7 @@ import copy
 import operator
 import pwd
 import fnmatch
+import shutil
 try:
     import json
 except Exception:
@@ -2604,6 +2605,14 @@ class CgroupUtils(object):
         else:
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Slice file missing %s' %
                        (caller_name(), slicefile))
+
+        if jobid:
+            runcontrol = os.path.join(os.sep, 'run', 'systemd', 'system.control',
+                                     self._jobid_to_systemd_subdir(jobid) + '.d')
+            try:
+                shutil.rmtree(runcontrol, ignore_errors=True)
+            except:
+                pass
 
     def _get_vnode_type(self):
         """
