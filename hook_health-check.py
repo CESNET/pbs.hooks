@@ -136,11 +136,11 @@ class HealthCheck(object):
 
         return ""
 
-    def set_comment(self):
+    def create_comment(self):
         if (self.rc <= 0):
-            return
+            return self.get_prev_comment()
 
-        comment = None
+        comment = ""
 
         if (self.rc in self.rc_to_comment.keys()):
             comment = self.rc_to_comment[self.rc]
@@ -150,19 +150,26 @@ class HealthCheck(object):
 
         if comment:
             comment = self.get_prev_comment() + " " + self.comment_prefix + comment
-            self.vnl[self.nodename].comment = comment.strip()
+
+        return comment.strip()
+
+    def set_comment(self):
+        if (self.rc <= 0):
+            if self.comment_prefix in str(self.node.comment):
+                comment = self.get_prev_comment()
+                if comment:
+                    self.vnl[self.nodename].comment = comment
+                else:
+                    self.vnl[self.nodename].comment = None
+        else:
+            self.vnl[self.nodename].comment = self.create_comment()
 
     def set_online(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OK")
 
         self.vnl[self.nodename].state = pbs.ND_FREE
 
-        if self.comment_prefix in str(self.node.comment):
-            comment = self.get_prev_comment()
-            if comment:
-                self.vnl[self.nodename].comment = comment
-            else:
-                self.vnl[self.nodename].comment = None
+        self.set_comment()
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
@@ -185,6 +192,9 @@ class HealthCheck(object):
             if self.rc > 0:
                 if not (self.node.state & pbs.ND_OFFLINE):
                     self.set_offline()
+                elif self.node.comment != self.create_comment() and (self.comment_prefix in self.node.comment):
+                    self.set_comment()
+                    pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; OFFLINE comment updated")
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node already OFFLINE")
 
