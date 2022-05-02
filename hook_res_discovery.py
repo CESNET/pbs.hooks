@@ -48,6 +48,9 @@ class Discovery(object):
         if self.getandset_cpu_vendor() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set cpu_vendor resource" % self.hook_name)
 
+        if self.getandset_gpu_mem() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set gpu_mem resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -279,6 +282,37 @@ class Discovery(object):
             self.vnl[self.local_node].resources_available["cpu_vendor"] = res_value
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cpu_vendor set to: %s" % (self.hook_name, res_value))
         return True
+
+    ################################################
+    # gpu_mem
+    ################################################
+    def getandset_gpu_mem(self):
+        cmd = ['nvidia-smi', '--query-gpu=memory.total', '--format=csv', '-i', '0']
+        try:
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            nvidia_smi = result.communicate()[0].decode("utf-8").strip()
+            returncode = result.returncode
+
+            if returncode != 0:
+                nvidia_smi=""
+        except:
+            nvidia_smi = ""
+
+        gpu_mem = 0
+        if len(nvidia_smi) > 0:
+            for line in nvidia_smi.split('\n'):
+                l = line.split()
+                if len(l) == 2 and l[1] == "MiB":
+                    try:
+                        gpu_mem = int(l[0])
+                    except:
+                        gpu_mem = 0
+            if gpu_mem > 0:
+               self.vnl[self.local_node].resources_available["gpu_mem"] = pbs.size("%dmb" % gpu_mem)
+               pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource gpu_mem set to: %d mb" % (self.hook_name, gpu_mem))
+               return True
+
+        return False
 
 try:
     e = pbs.event()
