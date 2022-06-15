@@ -18,10 +18,7 @@
             "enabled"            : true,
             "exclude_cpus"       : [],
             "exclude_hosts"      : [
-                                   "lex1", "lex2", "lex3", "lex4", "lex5", "lex6", "lex7", "lex8", "lex9", "lex10", "lex11", "lex12", "lex13", "lex14", "lex15", "lex16", "lex17", "lex18", "lex19", "lex20", "lex21", "lex22", "lex23", "lex24", "lex25",
-                                   "krux1", "krux2", "krux3", "krux4", "krux5", "krux6",
-                                   "zubat1", "zubat2", "zubat3", "zubat4", "zubat5", "zubat6", "zubat7", "zubat8",
-                                   "phi3", "phi6", "phi2", "phi1", "phi4", "phi5", "zigur12",
+                                   "phi3", "phi6", "phi2", "phi1", "phi4", "phi5",
                                    "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14"
                                    ],
             "exclude_vntypes"    : [],
