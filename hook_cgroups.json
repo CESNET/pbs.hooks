@@ -20,7 +20,7 @@
             "exclude_hosts"      : [
                                    "phi3", "phi6", "phi2", "phi1", "phi4", "phi5",
                                    "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14",
-                                   "elmo5-15", "elmo5-16", "elmo5-17", "elmo5-18", "elmo5-19", "elmo5-20"
+                                   "elmo5-16", "elmo5-18"
                                    ],
             "exclude_vntypes"    : [],
             "mem_fences"         : false,
@@ -54,7 +54,7 @@
             "enabled"            : true,
             "exclude_hosts"      : [
                                    "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14",
-                                   "elmo5-15", "elmo5-16", "elmo5-17", "elmo5-18", "elmo5-19", "elmo5-20"
+                                   "elmo5-16", "elmo5-18"
                                    ],
             "exclude_vntypes"    : [],
             "soft_limit"         : false,
