@@ -1,0 +1,85 @@
+{
+    "cgroup_exclude_hosts"         : ["oven", "phi3", "phi6", "phi2", "phi1", "phi4", "phi5"],
+
+    "cgroup" : {
+        "cpuacct" : {
+            "exclude_hosts"      : []
+        },
+        "cpuset" : {
+            "exclude_hosts"      : [
+                                   "phi3", "phi6", "phi2", "phi1", "phi4", "phi5",
+                                   "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14"
+                                   ]
+        },
+        "devices" : {
+            "exclude_hosts"      : []
+        },
+        "hugetlb" : {
+            "exclude_hosts"      : []
+        },
+        "memory" : {
+            "exclude_hosts"      : [
+                                   "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14"
+                                   ]
+        },
+        "memsw" : {
+            "exclude_hosts"      : []
+        }
+    },
+
+    "spec": {
+        "^carex.*": 6.7,
+        "^draba.*": 5.2,
+        "^vinca.*": 9.1,
+        "^lex.*": 3.5,
+        "^zubat.*": 3.3,
+        "^krux.*": 1,
+        "^adan.*": 5.9,
+        "^aman.*": 2.6,
+        "^meduseld.*": 2.6,
+        "^tarkil.*": 3.2,
+        "^oven$": 0,
+        "^ida.*": 3.3,
+        "^halmir.*": 8,
+        "^galdor.*": 8,
+        "^nympha.*": 3.8,
+        "^kirke.*": 6.9,
+        "^grimbold.*": 5.2,
+        "^hildor.*": 2.9,
+        "^minos.*": 1.8,
+        "^hagrid.*": 1.6,
+        "^elwe.*": 7,
+        "^elmo5.*": 3.8,
+        "^elmo4.*": 4.1,
+        "^elmo3.*": 4.1,
+        "^elmo2.*": 4.1,
+        "^elmo1.*": 4.1,
+        "^eltu.*": 5.3,
+        "^luna2[0-9]*.*": 7.2,
+        "^luna1[0-9]*.*": 7.4,
+        "^luna[0-9]{2}$": 3.9,
+        "^storm.*": 0,
+        "^cha$": 5.5,
+        "^mor[0-9]$": 5.8,
+        "^pcr[0-9]+$": 5.1,
+        "^fau[0-9]$": 5.1,
+        "^fer[0-9]$": 6.6,
+        "^charon.*": 5,
+        "^upol128$": 3.4,
+        "^alfrid.*": 3.3,
+        "^konos.*": 4.2,
+        "^black1$": 3.3,
+        "^elan[0-9]$": 5.2,
+        "^gita[0-9]*.*": 10.4,
+        "^glados.*": 3.4,
+        "^phi[0-9]$": 1.1,
+        "^samson$": 4.9,
+        "^urga$": 3.4,
+        "^ursa$": 4.3,
+        "^uruk$": 4.8,
+        "^zefron.*": 3.4,
+        "^zelda.*": 3.7,
+        "^zenon.*": 4.1,
+        "^zia[0-9]$": 4.1
+    }
+}

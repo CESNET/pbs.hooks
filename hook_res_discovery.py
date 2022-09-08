@@ -13,6 +13,7 @@ class Discovery(object):
     
     cgroups_types = ["cpuacct", "cpuset", "memory", "memsw"]    
     exclude_hosts = {}
+    spec = {}
 
 
     def __init__(self, pbs_event):
@@ -51,6 +52,9 @@ class Discovery(object):
         if self.getandset_gpu_mem() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set gpu_mem resource" % self.hook_name)
 
+        if self.getandset_spec() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set spec resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -76,14 +80,20 @@ class Discovery(object):
                 return False
 
         try:
-            if "exclude_hosts" in config.keys():
-                self.exclude_hosts["general"] = list(config["exclude_hosts"])
+            if "cgroup_exclude_hosts" in config.keys():
+                self.exclude_hosts["general"] = list(config["cgroup_exclude_hosts"])
+            else:
+                self.exclude_hosts["general"] = {}
                 
                 
             if "cgroup" in config.keys():
                 for flag in self.cgroups_types:
                     if flag in config["cgroup"].keys() and "exclude_hosts" in config["cgroup"][flag].keys():
                         self.exclude_hosts[flag] = list(config["cgroup"][flag]["exclude_hosts"])
+
+            if "spec" in config.keys():
+                for noder in config["spec"].keys():
+                    self.spec[noder] = config["spec"][noder]
 
         except Exception as err:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to parse config '%s'" % (self.hook_name, err))
@@ -311,6 +321,21 @@ class Discovery(object):
                self.vnl[self.local_node].resources_available["gpu_mem"] = pbs.size("%dmb" % gpu_mem)
                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource gpu_mem set to: %d mb" % (self.hook_name, gpu_mem))
                return True
+
+        return False
+
+    ################################################
+    # spec
+    ################################################
+    def getandset_spec(self):
+        if not self.parse_cfg():
+            return False
+
+        for noder in self.spec.keys():
+            if re.search(noder, self.local_node):
+                self.vnl[self.local_node].resources_available["spec"] = self.spec[noder]
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource spec set to: %f" % (self.hook_name, self.spec[noder]))
+                return True
 
         return False
 

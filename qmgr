@@ -149,7 +149,7 @@ set hook res_discovery order = 5
 set hook res_discovery debug = false
 set hook res_discovery fail_action = none
 import hook res_discovery application/x-python default /root/pbspro.hooks/hook_res_discovery.py
-import hook res_discovery application/x-config default /root/pbspro.hooks/hook_cgroups.json
+import hook res_discovery application/x-config default /root/pbspro.hooks/hook_res_discovery.json
 
 #
 # Create and define hook uvsize
