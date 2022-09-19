@@ -55,6 +55,9 @@ class Discovery(object):
         if self.getandset_spec() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set spec resource" % self.hook_name)
 
+        if self.getandset_pbs_server() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set pbs_server resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -338,6 +341,15 @@ class Discovery(object):
                 return True
 
         return False
+
+    ################################################
+    # pbs_server
+    ################################################
+    def getandset_pbs_server(self):
+        pbs_server = pbs.server().name
+        self.vnl[self.local_node].resources_available["pbs_server"] = pbs_server
+        pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource pbs_server set to: %s" % (self.hook_name, pbs_server))
+        return True
 
 try:
     e = pbs.event()
