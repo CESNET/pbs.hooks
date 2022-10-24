@@ -131,8 +131,8 @@ class HealthCheck(object):
             self.e.reject()
 
     def get_prev_comment(self):
-        if self.node.comment:
-            return re.sub(self.comment_prefix + '.*', '', self.node.comment).strip()
+        if self.node.comment_aux:
+            return re.sub(self.comment_prefix + '.*', '', self.node.comment_aux).strip()
 
         return ""
 
@@ -155,26 +155,26 @@ class HealthCheck(object):
 
     def set_comment(self):
         if (self.rc <= 0):
-            if self.comment_prefix in str(self.node.comment):
+            if self.comment_prefix in str(self.node.comment_aux):
                 comment = self.get_prev_comment()
                 if comment:
-                    self.vnl[self.nodename].comment = comment
+                    self.vnl[self.nodename].comment_aux = comment
                 else:
-                    self.vnl[self.nodename].comment = None
+                    self.vnl[self.nodename].comment_aux = None
         else:
-            self.vnl[self.nodename].comment = self.create_comment()
+            self.vnl[self.nodename].comment_aux = self.create_comment()
 
     def set_online(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OK")
 
-        self.vnl[self.nodename].state = pbs.ND_FREE
+        self.vnl[self.nodename].state_aux = pbs.ND_FREE
 
         self.set_comment()
 
     def set_offline(self):
         pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; node is OFFLINE")
 
-        self.vnl[self.nodename].state = pbs.ND_OFFLINE
+        self.vnl[self.nodename].state_aux = pbs.ND_OFFLINE
 
         self.set_comment()
 
@@ -184,15 +184,15 @@ class HealthCheck(object):
             self.call_hc(self.script)
 
             if self.rc == 0:
-                if self.node.comment and (self.comment_prefix in self.node.comment):
+                if self.node.comment_aux and (self.comment_prefix in self.node.comment_aux):
                     self.set_online()
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; setting ONLINE skipped")
 
             if self.rc > 0:
-                if not (self.node.state & pbs.ND_OFFLINE):
+                if self.node.state_aux == None or (not (self.node.state_aux & pbs.ND_OFFLINE)):
                     self.set_offline()
-                elif self.node.comment != self.create_comment() and (self.comment_prefix in self.node.comment):
+                elif self.node.comment_aux != self.create_comment() and (self.comment_prefix in self.node.comment_aux):
                     self.set_comment()
                     pbs.logmsg(pbs.EVENT_DEBUG,"Health-check hook; OFFLINE comment updated")
                 else:
