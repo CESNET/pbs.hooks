@@ -2,8 +2,8 @@ import pbs
 import re
 import math
 
-queue_name = "uv16"
-ncpus_divider = 16
+queue_name = "uv18"
+ncpus_divider = 18
 
 try:
     e = pbs.event()
@@ -38,7 +38,7 @@ try:
 
                 reqncpus += multichunk * ncpus
                 
-                if ncpus % 16 != 0:
+                if ncpus % ncpus_divider != 0:
                     e.reject("The number of CPUs of each chunk must be divisible by %d" % ncpus_divider)
 
         else:
@@ -48,7 +48,7 @@ try:
         if reqncpus == 0:
             e.reject("The queue '%s' requires ncpus specification." % queue_name)
 
-        if reqncpus % 16 != 0:
+        if reqncpus % ncpus_divider != 0:
             e.reject("The number of CPUs must be divisible by %d" % ncpus_divider)
 
 except SystemExit:
