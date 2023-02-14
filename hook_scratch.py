@@ -241,6 +241,20 @@ try:
                     scratch_total_size += resources[node_i][scratch_type]
             j.Variable_List["PBS_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
             j.Variable_List["TORQUE_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
+        else:
+            path="/var/tmp/pbs.%s" % j.id
+
+            j.Variable_List["SCRATCHDIR"]=path
+            j.Variable_List["SCRATCH"]=path
+
+            j.Variable_List["SCRATCH_VOLUME"]=0
+            j.Variable_List["PBS_RESC_SCRATCH_VOLUME"]=0
+            j.Variable_List["TORQUE_RESC_SCRATCH_VOLUME"]=0
+
+            j.Variable_List["SCRATCH_TYPE"]="none"
+
+            j.Variable_List["PBS_RESC_TOTAL_SCRATCH_VOLUME"]=0
+            j.Variable_List["TORQUE_RESC_TOTAL_SCRATCH_VOLUME"]=0
 
 
 
