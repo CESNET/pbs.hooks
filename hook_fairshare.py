@@ -86,6 +86,15 @@ try:
         if job.in_ms_mom():
             job.resources_used["fairshare_mem"] = job.Resource_List["mem"]
 
+            try:
+                node = pbs.server().vnode(pbs.get_local_nodename())
+
+                f_spec = node.resources_available['spec']
+
+                job.resources_used["fairshare_spec"] = f_spec
+            except Exception as err:
+                job.resources_used["fairshare_spec"] = 1.0
+
 except SystemExit:
     pass
 except Exception as err:
