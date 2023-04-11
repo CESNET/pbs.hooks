@@ -236,3 +236,19 @@ set hook meta-pbs_large_mem order = 1
 set hook meta-pbs_large_mem debug = false
 set hook meta-pbs_large_mem fail_action = none
 import hook meta-pbs_large_mem application/x-python default /root/pbspro.hooks/hook_meta-pbs_large_mem.py
+
+#
+# Create and define hook rapid
+#
+create hook rapid
+set hook rapid type = site
+set hook rapid enabled = true
+set hook rapid event = queuejob
+set hook rapid event += periodic
+set hook rapid user = pbsadmin
+set hook rapid alarm = 30
+set hook rapid freq = 60
+set hook rapid order = 20
+set hook rapid debug = false
+set hook rapid fail_action = none
+import hook rapid application/x-python default /root/pbspro.hooks/hook_rapid.py
