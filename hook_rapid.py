@@ -1,9 +1,14 @@
 import pbs
 import os
 
+#default interactive
 default_queue = "default"
 interactive_queue = "interactive"
 max_duration = pbs.duration("48:00:00")
+
+# ondemand
+ood_default = "ood_default"
+ood_rapid = "ood"
 
 def check_interactive_suitable(j):
     if not j.interactive:
@@ -14,6 +19,10 @@ def check_interactive_suitable(j):
 
     return True
 
+def move_job(queue, jid):
+    os.environ["PBSPRO_IGNORE_KERBEROS"] = ""
+    os.environ['PATH'] += ":/opt/pbs/bin/"
+    os.system(str.format("qmove %s %s" % (ood_default, j.id)))
 
 try:
     e = pbs.event()
@@ -33,6 +42,14 @@ try:
                 q = pbs.server().queue(interactive_queue)
                 j.queue = q
 
+
+        if str(j.queue) == ood_rapid:
+            e.accept()
+
+        if str(j.queue) == ood_default:
+            q = pbs.server().queue(ood_rapid)
+            j.queue = q
+
         e.accept()
 
     if e.type == pbs.PERIODIC:
@@ -44,9 +61,17 @@ try:
             if j.comment == None:
                 continue
 
-            os.environ["PBSPRO_IGNORE_KERBEROS"] = ""
-            os.environ['PATH'] += ":/opt/pbs/bin/"
-            os.system(str.format("qmove %s %s" % (default_queue, j.id)))
+            move_job(default_queue, j.id)
+
+        q = pbs.server().queue(ood_rapid)
+        for j in q.jobs():
+            if j.job_state != pbs.JOB_STATE_QUEUED:
+                continue
+
+            if j.comment == None:
+                continue
+
+            move_job(ood_default, j.id)
 
         e.accept()
 
