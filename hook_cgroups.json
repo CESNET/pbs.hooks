@@ -19,6 +19,7 @@
             "exclude_cpus"       : [],
             "exclude_hosts"      : [
                                    "phi3", "phi6", "phi2", "phi1", "phi4", "phi5",
+                                   "elwe10", "elwe11", "elwe12", "elwe13", "elwe14", "elwe15", "elwe16", "elwe17", "elwe18", "elwe19",
                                    "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14"
                                    ],
             "exclude_vntypes"    : [],
@@ -52,6 +53,7 @@
         "memory" : {
             "enabled"            : true,
             "exclude_hosts"      : [
+                                   "elwe10", "elwe11", "elwe12", "elwe13", "elwe14", "elwe15", "elwe16", "elwe17", "elwe18", "elwe19",
                                    "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14"
                                    ],
             "exclude_vntypes"    : [],
