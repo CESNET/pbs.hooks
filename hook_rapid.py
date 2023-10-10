@@ -22,7 +22,7 @@ def check_interactive_suitable(j):
 def move_job(queue, jid):
     os.environ["PBSPRO_IGNORE_KERBEROS"] = ""
     os.environ['PATH'] += ":/opt/pbs/bin/"
-    os.system(str.format("qmove %s %s" % (ood_default, j.id)))
+    os.system(str.format("qmove %s %s" % (queue, jid)))
 
 try:
     e = pbs.event()
@@ -78,4 +78,4 @@ try:
 except SystemExit:
     pass
 except Exception as err:
-    e.reject("interactive hook failed, error: %s" % str(err))
+    e.reject("rapid hook failed, error: %s" % str(err))
