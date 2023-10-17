@@ -216,6 +216,8 @@ try:
 
             j.Variable_List["SCRATCHDIR"]=path
             j.Variable_List["SCRATCH"]=path
+            j.Variable_List["SINGULARITY_TMPDIR"]=path
+            j.Variable_List["SINGULARITY_CACHEDIR"]=path
 
             j.Variable_List["SCRATCH_VOLUME"]=scratch_size * 1024
             j.Variable_List["PBS_RESC_SCRATCH_VOLUME"]=scratch_size * 1024
@@ -246,6 +248,8 @@ try:
 
             j.Variable_List["SCRATCHDIR"]=path
             j.Variable_List["SCRATCH"]=path
+            j.Variable_List["SINGULARITY_TMPDIR"]=path
+            j.Variable_List["SINGULARITY_CACHEDIR"]=path
 
             j.Variable_List["SCRATCH_VOLUME"]=0
             j.Variable_List["PBS_RESC_SCRATCH_VOLUME"]=0
