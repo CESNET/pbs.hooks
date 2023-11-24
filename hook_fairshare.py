@@ -91,6 +91,9 @@ try:
 
                 f_spec = node.resources_available['spec']
 
+                if f_spec == None:
+                    f_spec = 1.0
+
                 job.resources_used["fairshare_spec"] = f_spec
             except Exception as err:
                 job.resources_used["fairshare_spec"] = 1.0
