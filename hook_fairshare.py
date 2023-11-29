@@ -84,7 +84,10 @@ try:
     if e.type == pbs.EXECJOB_BEGIN:
         job = pbs.event().job
         if job.in_ms_mom():
-            job.resources_used["fairshare_mem"] = job.Resource_List["mem"]
+            f_mem = job.Resource_List["mem"]
+            if f_mem == None:
+                f_mem = pbs.size('10mb')
+            job.resources_used["fairshare_mem"] = f_mem
 
             try:
                 node = pbs.server().vnode(pbs.get_local_nodename())
