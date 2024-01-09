@@ -248,7 +248,7 @@ set hook rapid event += periodic
 set hook rapid user = pbsadmin
 set hook rapid alarm = 30
 set hook rapid freq = 60
-set hook rapid order = 20
+set hook rapid order = 1
 set hook rapid debug = false
 set hook rapid fail_action = none
 import hook rapid application/x-python default /root/pbspro.hooks/hook_rapid.py
