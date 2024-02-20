@@ -211,6 +211,7 @@ try:
                     os.chmod(path,0o777^int(str(umask),8))
             except Exception as err:
                 pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s, err: %s" % (path,str(err)))
+                e.reject("scratch hook failed: %s" % str(err))
 
             #nastaveni env, hodnoty vynasobime 1024, jednotky maji byt v B
 
