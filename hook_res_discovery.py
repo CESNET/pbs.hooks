@@ -117,15 +117,21 @@ class Discovery(object):
 
         if self.local_node in self.exclude_hosts["general"]:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags))) 
-            self.vnl[self.local_node].resources_available["cgroups"] = None
+            self.vnl[self.local_node].resources_available["cgroups"] = "None"
             return True
 		
         for flag in self.cgroups_types:
             if os.path.isdir("/sys/fs/cgroup/%s" % flag) and self.local_node not in self.exclude_hosts[flag]:
                 flags.append(flag)
-        
+
+        if flags:
+            flags = ",".join(flags)
+
+        if not flags:
+            flags = "None"
+
         try:
-            self.vnl[self.local_node].resources_available["cgroups"] = ",".join(flags)
+            self.vnl[self.local_node].resources_available["cgroups"] = flags
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags)))            
         except Exception as err:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, getandset_cgroups error: %s" % (self.hook_name, str(err)))
@@ -155,9 +161,10 @@ class Discovery(object):
                 flags = "%s" % ",".join(line[1].split())
                 break
 
-        if flags:
-            self.vnl[self.local_node].resources_available["cpu_flag"] = flags
-            pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cpu_flag set to: %s" % (self.hook_name, flags))
+        if not flags:
+            flags = "None"
+        self.vnl[self.local_node].resources_available["cpu_flag"] = flags
+        pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cpu_flag set to: %s" % (self.hook_name, flags))
 
         return True
 
@@ -198,6 +205,8 @@ class Discovery(object):
             res_value = os+version
             if res_value in version_aliases.keys():
                 res_value = version_aliases[res_value]
+            if not res_value:
+                res_value = "None"
             self.vnl[self.local_node].resources_available["os"] = res_value
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource os set to: %s" % (self.hook_name, res_value))
         return True
@@ -234,6 +243,8 @@ class Discovery(object):
             res_value = osfamily
             if res_value in version_aliases.keys():
                 res_value = version_aliases[res_value]
+            if not res_value:
+                res_value = "None"
             self.vnl[self.local_node].resources_available["osfamily"] = res_value
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource osfamily set to: %s" % (self.hook_name, res_value))
         return True
@@ -292,6 +303,8 @@ class Discovery(object):
             res_value = cpu_vendor
             if res_value in version_aliases.keys():
                 res_value = version_aliases[res_value]
+            if not cpu_vendor:
+                cpu_vendor = "None"
             self.vnl[self.local_node].resources_available["cpu_vendor"] = res_value
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource cpu_vendor set to: %s" % (self.hook_name, res_value))
         return True
@@ -347,6 +360,8 @@ class Discovery(object):
     ################################################
     def getandset_pbs_server(self):
         pbs_server = pbs.server().name
+        if not pbs_server:
+            pbs_server = "None"
         self.vnl[self.local_node].resources_available["pbs_server"] = pbs_server
         pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource pbs_server set to: %s" % (self.hook_name, pbs_server))
         return True
