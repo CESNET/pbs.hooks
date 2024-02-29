@@ -252,3 +252,17 @@ set hook rapid order = 1
 set hook rapid debug = false
 set hook rapid fail_action = none
 import hook rapid application/x-python default /root/pbspro.hooks/hook_rapid.py
+
+#
+# Create and define hook gpu8
+#
+create hook gpu8
+set hook gpu8 type = site
+set hook gpu8 enabled = true
+set hook gpu8 event = queuejob
+set hook gpu8 user = pbsadmin
+set hook gpu8 alarm = 60
+set hook gpu8 order = 1
+set hook gpu8 debug = false
+set hook gpu8 fail_action = none
+import hook gpu8 application/x-python default /root/pbspro.hooks/hook_gpu8.py
