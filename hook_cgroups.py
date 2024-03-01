@@ -5809,7 +5809,14 @@ class CgroupUtils(object):
         try:
             with open(self._cgroup_path('memory', 'max_usage_in_bytes',
                                         jobid), 'r') as desc:
-                return int(desc.readline().strip())
+                max = int(desc.readline().strip())
+            with open(self._cgroup_path('memory', 'limit_in_bytes',
+                                        jobid), 'r') as desc:
+                limit = int(desc.readline().strip())
+            if (max > limit):
+                return limit
+            else:
+                return max
         except Exception:
             return None
 
@@ -5821,7 +5828,14 @@ class CgroupUtils(object):
         try:
             with open(self._cgroup_path('memsw', 'max_usage_in_bytes', jobid),
                       'r') as desc:
-                return int(desc.readline().strip())
+                max = int(desc.readline().strip())
+            with open(self._cgroup_path('memsw', 'limit_in_bytes', jobid),
+                      'r') as desc:
+                limit = int(desc.readline().strip())
+            if (max > limit):
+                return limit
+            else:
+                return max
         except Exception:
             return None
 
