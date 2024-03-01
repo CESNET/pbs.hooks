@@ -7,19 +7,23 @@
 create hook cgroups
 set hook cgroups type = site
 set hook cgroups enabled = true
-set hook cgroups event = execjob_begin
-set hook cgroups event += execjob_epilogue
-set hook cgroups event += execjob_end
-set hook cgroups event += execjob_launch
-set hook cgroups event += execjob_attach
-set hook cgroups event += exechost_periodic
+set hook cgroups event = exechost_periodic
 set hook cgroups event += exechost_startup
+set hook cgroups event += execjob_attach
+set hook cgroups event += execjob_begin
+set hook cgroups event += execjob_end
+set hook cgroups event += execjob_epilogue
+set hook cgroups event += execjob_launch
+set hook cgroups event += execjob_resize
+set hook cgroups event += execjob_abort
+set hook cgroups event += execjob_postsuspend
+set hook cgroups event += execjob_preresume
 set hook cgroups user = pbsadmin
-set hook cgroups alarm = 60
+set hook cgroups alarm = 90
 set hook cgroups freq = 120
 set hook cgroups order = 2
 set hook cgroups debug = false
-set hook cgroups fail_action = none
+# set hook cgroups fail_action = offline_vnodes
 import hook cgroups application/x-python default /root/pbs.hooks/hook_cgroups.py
 import hook cgroups application/x-config default /root/pbs.hooks/hook_cgroups.json
 

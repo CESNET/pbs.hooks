@@ -1,43 +1,46 @@
 # coding: utf-8
 
-# Copyright (C) 1994-2019 Altair Engineering, Inc.
+# Copyright (C) 1994-2021 Altair Engineering, Inc.
 # For more information, contact Altair at www.altair.com.
 #
-# This file is part of the PBS Professional ("PBS Pro") software.
+# This file is part of both the OpenPBS software ("OpenPBS")
+# and the PBS Professional ("PBS Pro") software.
 #
 # Open Source License Information:
 #
-# PBS Pro is free software. You can redistribute it and/or modify it under the
-# terms of the GNU Affero General Public License as published by the Free
-# Software Foundation, either version 3 of the License, or (at your option) any
-# later version.
+# OpenPBS is free software. You can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
 #
-# PBS Pro is distributed in the hope that it will be useful, but WITHOUT ANY
-# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.
-# See the GNU Affero General Public License for more details.
+# OpenPBS is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public
+# License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # Commercial License Information:
 #
-# For a copy of the commercial license terms and conditions,
-# go to: (http://www.pbspro.com/UserArea/agreement.html)
-# or contact the Altair Legal Department.
+# PBS Pro is commercially licensed software that shares a common core with
+# the OpenPBS software.  For a copy of the commercial license terms and
+# conditions, go to: (http://www.pbspro.com/agreement.html) or contact the
+# Altair Legal Department.
 #
-# Altair’s dual-license business model allows companies, individuals, and
-# organizations to create proprietary derivative works of PBS Pro and
+# Altair's dual-license business model allows companies, individuals, and
+# organizations to create proprietary derivative works of OpenPBS and
 # distribute them - whether embedded or bundled with other software -
 # under a commercial license agreement.
 #
-# Use of Altair’s trademarks, including but not limited to "PBS™",
-# "PBS Professional®", and "PBS Pro™" and Altair’s logos is subject to Altair's
-# trademark licensing policies.
+# Use of Altair's trademarks, including but not limited to "PBS™",
+# "OpenPBS®", "PBS Professional®", and "PBS Pro™" and Altair's logos is
+# subject to Altair's trademark licensing policies.
+
 
 """
-PBS Professional hook for managing cgroups on Linux execution hosts.
-This hook contains the handlers required for PBS Professional to support
+PBS hook for managing cgroups on Linux execution hosts.
+This hook contains the handlers required for PBS to support
 cgroups on Linux hosts that support them (kernel 2.6.28 and higher)
 
 This hook services the following events:
@@ -63,30 +66,85 @@ This hook services the following events:
 # amount of resource requested will not be avaiable to the hook if they
 # are not present.
 
-# Module imports
-import sys
-import os
-import fcntl
-import stat
-import errno
-import signal
-import subprocess
-import re
-import glob
-import time
-import string
+# if we are not on a Linux system then the hook should always do nothing
+# and accept, and certainly not try Linux-only module imports
 import platform
-import traceback
-import copy
-import operator
-import pwd
-import fnmatch
-import shutil
-try:
-    import json
-except Exception:
-    import simplejson as json
+
+# Module imports
+#
+# This one is needed to log messages
 import pbs
+
+if platform.system() != 'Linux':
+    pbs.logmsg(pbs.EVENT_DEBUG,
+               'Cgroup hook not on supported OS '
+               '-- just accepting event')
+    pbs.event().accept()
+
+# we're on Linux, but does the kernel support cgroups?
+rel = list(map(int, (platform.release().split('-')[0].split('.'))))
+pbs.logmsg(pbs.EVENT_DEBUG4,
+           'Cgroup hook: detected Linux kernel version %d.%d.%d' %
+           (rel[0], rel[1], rel[2]))
+
+supported = False
+if rel[0] > 2:
+    supported = True
+elif rel[0] == 2:
+    if rel[1] > 6:
+        supported = True
+    elif rel[1] == 6:
+        if rel[2] >= 28:
+            supported = True
+
+if not supported:
+    pbs.logmsg(pbs.EVENT_DEBUG,
+               'Cgroup hook: kernel %s.%s.%s < 2.6.28; not supported'
+               % (rel[0], rel[1], rel[2]))
+    pbs.event.accept()
+else:
+    # Now we know that at least the hook might do something useful
+    # so import other modules (some of them Linux-specific)
+    # Note the else is needed to be PEP8-compliant:  the imports must
+    # not be unindented since they are not top-of-file
+    import sys
+    import os
+    import stat
+    import errno
+    import signal
+    import subprocess
+    import re
+    import glob
+    import time
+    import string
+    import traceback
+    import copy
+    import operator
+    import fnmatch
+    import math
+    import types
+    try:
+        import json
+    except Exception:
+        import simplejson as json
+    multiprocessing = None
+    try:
+        # will fail in Python 2.5
+        import multiprocessing
+    except Exception:
+        # but we can use isinstance(multiprocessing, types.ModuleType) later
+        # to find out if it worked
+        pass
+    import fcntl
+    import pwd
+
+    PYTHON2 = sys.version_info[0] < 3
+
+    try:
+        bytearray
+        BYTEARRAY_EXISTS = True
+    except NameError:
+        BYTEARRAY_EXISTS = False
 
 # Define some globals that get set in main
 PBS_EXEC = ''
@@ -120,7 +178,7 @@ class UserError(Exception):
     pass
 
 
-class JobValueError(UserError):
+class JobValueError(Exception):
     """
     Errors in PBS job resource values.
     """
@@ -167,6 +225,26 @@ class TimeoutError(ProcessingError):
 # ============================================================================
 
 #
+# FUNCTION stringified_output
+#
+def stringified_output(out):
+    if PYTHON2:
+        if isinstance(out, str):
+            return(out)
+        elif isinstance(out, unicode):
+            return(out.encode('utf-8'))
+        else:
+            return(str(out))
+    else:
+        if isinstance(out, str):
+            return(out)
+        elif isinstance(out, (bytes, bytearray)):
+            return(out.decode('utf-8'))
+        else:
+            return(str(out))
+
+
+#
 # FUNCTION caller_name
 #
 def caller_name():
@@ -174,6 +252,39 @@ def caller_name():
     Return the name of the calling function or method.
     """
     return str(sys._getframe(1).f_code.co_name)
+
+
+#
+# FUNCTION systemd_escape
+#
+def systemd_escape(buf):
+    """
+    Escape strings for usage in system unit names
+    Some distros don't provide the systemd-escape command
+    """
+    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+    if not isinstance(buf, str):
+        raise ValueError('Not a basetype string')
+    ret = ''
+    for i, char in enumerate(buf):
+        if i < 1 and char == '.':
+            if PYTHON2:
+                ret += '\\x' + '.'.encode('hex')
+            else:
+                ret += '\\x' + b'.'.hex()
+        elif char.isalnum() or char in '_.':
+            ret += char
+        elif char == '/':
+            ret += '-'
+        else:
+            # Will turn non-ASCII into UTF-8 hex sequence on both Py2/3
+            if PYTHON2:
+                hexval = char.encode('hex')
+            else:
+                hexval = char.encode('utf-8').hex()
+            for j in range(0, len(hexval), 2):
+                ret += '\\x' + hexval[j:j + 2]
+    return ret
 
 
 #
@@ -233,7 +344,13 @@ def size_as_int(value):
     """
     Convert a size string to an integer representation of size in bytes
     """
-    return int(convert_size(value).rstrip(string.ascii_lowercase))
+    in_bytes = convert_size(value, units='b')
+    if in_bytes is not None:
+        return int(convert_size(value).rstrip(string.ascii_lowercase))
+    else:
+        pbs.logmsg(pbs.EVENT_ERROR, "size_as_int: Value %s "
+                   "does not convert to int, returning None" % value)
+        return None
 
 
 #
@@ -293,12 +410,19 @@ def decode_list(data):
     """
     ret = []
     for item in data:
-        if isinstance(item, (bytes, bytearray)):
-            item = str(item, 'utf-8')
-        elif isinstance(item, list):
+        if isinstance(item, str):
+            pass
+        if isinstance(item, list):
             item = decode_list(item)
         elif isinstance(item, dict):
             item = decode_dict(item)
+        elif PYTHON2:
+            if isinstance(item, unicode):
+                item = item.encode('utf-8')
+            elif BYTEARRAY_EXISTS and isinstance(item, bytearray):
+                item = str(item)
+        elif isinstance(item, (bytes, bytearray)):
+            item = str(item, 'utf-8')
         ret.append(item)
     return ret
 
@@ -309,14 +433,33 @@ def decode_dict(data):
     """
     ret = {}
     for key, value in list(data.items()):
-        if isinstance(key, (bytes, bytearray)):
+        # first the key
+        if isinstance(key, str):
+            pass
+        elif PYTHON2:
+            if isinstance(key, unicode):
+                key = key.encode('utf-8')
+            elif BYTEARRAY_EXISTS and isinstance(key, bytearray):
+                key = str(key)
+        elif isinstance(key, (bytes, bytearray)):
             key = str(key, 'utf-8')
-        if isinstance(value, (bytes, bytearray)):
-            value = str(value, 'utf-8')
-        elif isinstance(value, list):
+
+        # now the value
+        if isinstance(value, str):
+            pass
+        if isinstance(value, list):
             value = decode_list(value)
         elif isinstance(value, dict):
             value = decode_dict(value)
+        elif PYTHON2:
+            if isinstance(value, unicode):
+                value = value.encode('utf-8')
+            elif BYTEARRAY_EXISTS and isinstance(key, bytearray):
+                value = str(value)
+        elif isinstance(value, (bytes, bytearray)):
+            value = str(value, 'utf-8')
+
+        # add stringified (key, value) pair to result
         ret[key] = value
     return ret
 
@@ -411,10 +554,7 @@ def find_files(path, pattern='*', kind='',
             if not kind:
                 yield name
                 continue
-            try:
-                statinfo = os.lstat(name).st_mode
-            except FileNotFoundError:
-                continue
+            statinfo = os.lstat(name).st_mode
             for entry in kind:
                 if not entry:
                     yield name
@@ -487,16 +627,26 @@ def printjob_info(jobid, include_attributes=False):
         pbs.logmsg(pbs.EVENT_DEBUG4, 'Running: %s' % cmd)
         process = subprocess.Popen(cmd, shell=False,
                                    stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+                                   stderr=subprocess.PIPE,
+                                   universal_newlines=True)
         out, err = process.communicate()
+        if process.returncode != 0:
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       'command return code non-zero: %s'
+                       % str(process.returncode))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       'command stderr: %s'
+                       % stringified_output(err))
     except Exception as exc:
         pbs.logmsg(pbs.EVENT_DEBUG2, 'Error running command: %s' % cmd)
-        pbs.logmsg(pbs.EVENT_DEBUG2, 'Error message: %s' % err)
         pbs.logmsg(pbs.EVENT_DEBUG2, 'Exception: %s' % exc)
-        return info
+        return {}
+    # if we get a non-str type then convert before calling splitlines
+    # should not happen since we pass universal_newlines True
+    out_split = stringified_output(out).splitlines()
     pattern = re.compile(r'^(\w.*):\s*(\S+)')
-    for line in out.decode('utf-8').splitlines():
-        result = re.match(pattern, str(line))
+    for line in out_split:
+        result = re.match(pattern, line)
         if not result:
             continue
         key, val = result.groups()
@@ -508,6 +658,7 @@ def printjob_info(jobid, include_attributes=False):
             info[key] = int(val)
         else:
             info[key] = val
+    pbs.logmsg(pbs.EVENT_DEBUG4, 'JB file info returned: %s' % repr(info))
     return info
 
 
@@ -526,11 +677,117 @@ def job_is_running(jobid):
     Returns True if job shows a running state and substate
     """
     jobinfo = printjob_info(jobid)
-    if 'state' in jobinfo and jobinfo['state'] != 4:
-        return False
     if 'substate' in jobinfo:
         return jobinfo['substate'] == 42
     return False
+
+
+def fetch_vnode_comments_nomp(vnode_list, timeout=10):
+    comment_dict = {}
+    failure = False
+    pbs.logmsg(pbs.EVENT_DEBUG4,
+               "vnode list in fetch_vnode_comment is %s"
+               % vnode_list)
+    try:
+        with Timeout(timeout, 'Timed out contacting server'):
+            for vn in vnode_list:
+                comment_dict[vn] = pbs.server().vnode(vn).comment
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           "comment for vnode %s fetched from server is %s"
+                           % (str(vn), comment_dict[vn]))
+    except TimeoutError:
+        # pbs.server().vnode(xx).comment got stuck, or the timeout
+        # was too short for the number of nodes supplied
+        pbs.logmsg(pbs.EVENT_ERROR,
+                   'Timed out while fetching comments from server, '
+                   'timeout was %s' % str(timeout))
+        failure = True
+    except Exception as exc:
+        # other exception, like e.g. wrong vnode name
+        pbs.logmsg(pbs.EVENT_ERROR,
+                   'Unexpected error in fetch_vnode_comments: %s'
+                   % repr(exc))
+        failure = True
+    # only return a full dictionary if you got the comment for all vnodes
+    if not failure:
+        return (comment_dict, failure)
+    else:
+        return ({}, failure)
+
+
+def fetch_vnode_comments_queue(vnode_list, commq):
+    comment_dict = {}
+    failure = False
+    pbs.logmsg(pbs.EVENT_DEBUG4,
+               "vnode list in fetch_vnode_comment is %s"
+               % vnode_list)
+    try:
+        for vn in vnode_list:
+            comment_dict[vn] = pbs.server().vnode(vn).comment
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "comment for vnode %s fetched from server is %s"
+                       % (str(vn), comment_dict[vn]))
+
+    except Exception as exc:
+        # other exception, like e.g. wrong vnode name
+        pbs.logmsg(pbs.EVENT_ERROR,
+                   'Unexpected error in fetch_vnode_comments: %s'
+                   % repr(exc))
+        failure = True
+    # only return a full dictionary if you got the comment for all vnodes
+    if not failure:
+        commq.put(comment_dict)
+    else:
+        commq.put({})
+    return True
+
+
+def fetch_vnode_comments_mp(vnode_list, timeout=10):
+    worker_comment_dict = {}
+    commq = multiprocessing.Queue()
+    worker = multiprocessing.Process(target=fetch_vnode_comments_queue,
+                                     args=(vnode_list, commq))
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        pbs.logmsg(pbs.EVENT_ERROR,
+                   "comment fetcher for %s timed out after %s seconds"
+                   % (str(vnode_list), timeout))
+        # will mess up the commq Queue but we don't care
+        # will send SIGTERM, but it's possible that is masked
+        # while in a SWIG function
+        # we don't really care since unline in threading,
+        # in multiprocessing we can exit and orphan the worker
+        worker.terminate()
+        pbs.logmsg(pbs.EVENT_ERROR,
+                   'Timed out while fetching comments from server,'
+                   'timeout was %s' % str(timeout))
+        return ({}, True)
+    else:
+        pbs.logmsg(pbs.EVENT_DEBUG4,
+                   "comments fetched from server without timeout")
+        comment_dict = {}
+        try:
+            comment_dict = commq.get()
+        except Exception:
+            # Treat failure to get comments dictionary from queue
+            # as a timeout
+            return ({}, True)
+        pbs.logmsg(pbs.EVENT_DEBUG4,
+                   "worker comment_dict is %r" % comment_dict)
+
+        return (comment_dict, False)
+
+
+def fetch_vnode_comments(vnode_list, timeout=10):
+    if not isinstance(multiprocessing, types.ModuleType):
+        pbs.logmsg(pbs.EVENT_DEBUG4, "multiprocessing not available, "
+                   "fetch_vnode_comment will use SIGALRM timeout")
+        return fetch_vnode_comments_nomp(vnode_list, timeout)
+    else:
+        pbs.logmsg(pbs.EVENT_DEBUG4, "multiprocessing available, "
+                   "fetch_vnode_comment will use mp for timeout")
+        return fetch_vnode_comments_mp(vnode_list, timeout)
 
 
 # ============================================================================
@@ -629,6 +886,9 @@ class HookUtils(object):
             self.hook_events = hook_events
         else:
             # Defined in the order they appear in module_pbs_v1.c
+            # if adding new events that may not exist in all PBS versions,
+            # use hasattr() to prevent exceptions when the hook is used
+            # on older PBS versions - see e.g. EXECJOB_ABORT
             self.hook_events = {}
             self.hook_events[pbs.QUEUEJOB] = {
                 'name': 'queuejob',
@@ -642,6 +902,11 @@ class HookUtils(object):
                 'name': 'resvsub',
                 'handler': None
             }
+            if hasattr(pbs, "MODIFYRESV"):
+                self.hook_events[pbs.MODIFYRESV] = {
+                    'name': 'modifyresv',
+                    'handler': None
+                }
             self.hook_events[pbs.MOVEJOB] = {
                 'name': 'movejob',
                 'handler': None
@@ -650,10 +915,35 @@ class HookUtils(object):
                 'name': 'runjob',
                 'handler': None
             }
+            if hasattr(pbs, "MANAGEMENT"):
+                self.hook_events[pbs.MANAGEMENT] = {
+                    'name': 'management',
+                    'handler': None
+                }
+            if hasattr(pbs, "MODIFYVNODE"):
+                self.hook_events[pbs.MODIFYVNODE] = {
+                    'name': 'modifyvnode',
+                    'handler': None
+                }
             self.hook_events[pbs.PROVISION] = {
                 'name': 'provision',
                 'handler': None
             }
+            if hasattr(pbs, "RESV_END"):
+                self.hook_events[pbs.RESV_END] = {
+                'name': 'resv_end',
+                'handler': None
+                }
+            if hasattr(pbs, "RESV_BEGIN"):
+                self.hook_events[pbs.RESV_BEGIN] = {
+                'name': 'resv_begin',
+                'handler': None
+                }
+            if hasattr(pbs, "RESV_CONFIRM"):
+                self.hook_events[pbs.RESV_CONFIRM] = {
+                'name': 'resv_confirm',
+                'handler': None
+                }
             self.hook_events[pbs.EXECJOB_BEGIN] = {
                 'name': 'execjob_begin',
                 'handler': self._execjob_begin_handler
@@ -690,22 +980,26 @@ class HookUtils(object):
                 'name': 'execjob_attach',
                 'handler': self._execjob_attach_handler
             }
-            self.hook_events[pbs.EXECJOB_RESIZE] = {
-                'name': 'execjob_resize',
-                'handler': self._execjob_resize_handler
-            }
-            self.hook_events[pbs.EXECJOB_ABORT] = {
-                'name': 'execjob_abort',
-                'handler': self._execjob_end_handler
-            }
-            self.hook_events[pbs.EXECJOB_POSTSUSPEND] = {
-                'name': 'execjob_postsuspend',
-                'handler': self._execjob_postsuspend_handler
-            }
-            self.hook_events[pbs.EXECJOB_PRERESUME] = {
-                'name': 'execjob_preresume',
-                'handler': self._execjob_preresume_handler
-            }
+            if hasattr(pbs, "EXECJOB_RESIZE"):
+                self.hook_events[pbs.EXECJOB_RESIZE] = {
+                    'name': 'execjob_resize',
+                    'handler': self._execjob_resize_handler
+                }
+            if hasattr(pbs, "EXECJOB_ABORT"):
+                self.hook_events[pbs.EXECJOB_ABORT] = {
+                    'name': 'execjob_abort',
+                    'handler': self._execjob_end_handler
+                }
+            if hasattr(pbs, "EXECJOB_POSTSUSPEND"):
+                self.hook_events[pbs.EXECJOB_POSTSUSPEND] = {
+                    'name': 'execjob_postsuspend',
+                    'handler': self._execjob_postsuspend_handler
+                }
+            if hasattr(pbs, "EXECJOB_PRERESUME"):
+                self.hook_events[pbs.EXECJOB_PRERESUME] = {
+                    'name': 'execjob_preresume',
+                    'handler': self._execjob_preresume_handler
+                }
             self.hook_events[pbs.MOM_EVENTS] = {
                 'name': 'mom_events',
                 'handler': None
@@ -773,11 +1067,29 @@ class HookUtils(object):
         cgroup.assigned_resources = cgroup._get_assigned_cgroup_resources()
         # Create the cgroup(s) for the job
         cgroup.create_job(event.job.id, node)
+        if (cgroup.cfg['cgroup']['cpuset']['enabled']
+                and not cgroup.cfg['cgroup']['cpuset']['allow_zero_cpus']):
+            if ('ncpus' not in jobutil.assigned_resources
+                    or jobutil.assigned_resources['ncpus'] <= 0):
+                if event.job.in_ms_mom():
+                    pbs.logmsg(pbs.EVENT_ERROR,
+                               'cpuset enabled with mandatory ncpus >= 1, '
+                               'but job does not request ncpus on '
+                               'mother superior: rejecting job')
+                    event.reject('cpuset enabled with mandatory ncpus >= 1, '
+                                 'but job does not request ncpus on '
+                                 'mother superior: rejecting job')
+                else:
+                    # will be done in configure_job
+                    pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                               'cpuset enabled with mandatory ncpus >= 1, '
+                               'but job does not request ncpus on host: '
+                               'deleting cpuset cgroup')
+
         # Configure the new cgroup
-        cgroup.configure_job(event.job.id, jobutil.assigned_resources,
+        cgroup.configure_job(event.job, jobutil.assigned_resources,
                              node, cgroup, event.type)
-        # Initialize resource usage for the job
-        cgroup.update_job_usage(event.job.id, event.job.resources_used)
+
         # Write out the assigned resources
         cgroup.write_cgroup_assigned_resources(event.job.id)
         # Write out the environment variable for the host (pbs_attach)
@@ -792,8 +1104,13 @@ class HookUtils(object):
                 for key in cgroup.assigned_resources['device_names']:
                     if key.startswith('mic'):
                         mics.append(key[3:])
-                    elif key.startswith('nvidia'):
-                        gpus.append(node.devices['gpu'][key]['uuid'])
+                    elif (key.startswith('nvidia')
+                            and "gpu" in node.devices
+                            and key in node.devices['gpu']):
+                        if 'uuid' in node.devices['gpu'][key]:
+                            gpus.append(node.devices['gpu'][key]['uuid'])
+                        if 'uuids' in node.devices['gpu'][key]:
+                            gpus.extend(node.devices['gpu'][key]['uuids'])
                 if mics:
                     env_list.append('OFFLOAD_DEVICES=%s' %
                                     ",".join(mics))
@@ -808,6 +1125,14 @@ class HookUtils(object):
         # Add jobid to cgroup_jobs file to tell periodic handler that this
         # job is new and its cgroup should not be cleaned up
         cgroup.add_jobid_to_cgroup_jobs(event.job.id)
+
+        # Initialize resources_used values that the hook will update
+        # so that they are not updated through MoM polling.
+        # Particularly important for resources_used.vmem which has
+        # different semantics when the cgroup hook manages mem+swap.
+        # Add 'force' flag because we haven't reached substate 42 yet
+        cgroup.update_job_usage(event.job.id, event.job.resources_used,
+                                force=True)
         return True
 
     def _execjob_epilogue_handler(self, event, cgroup, jobutil):
@@ -854,6 +1179,54 @@ class HookUtils(object):
                            'Error removing file: %s' % (filename))
         return True
 
+    def manage_rlimit_as(self, job):
+        """
+        Sets rlimit_as according to pvmem (if present)
+        if pvmem is not present, sets it to unlimited
+        (since we know vmem specifies memory+swap usage limit,
+         not address space limit)
+        """
+        import resource
+        rlimit_as = None
+        parent_pid = os.getppid()
+        if 'pvmem' in job.Resource_List and job.Resource_List['pvmem']:
+            rlimit_as = size_as_int(job.Resource_List['pvmem'])
+        else:
+            rlimit_as = resource.RLIM_INFINITY
+
+        prlimit_command = None
+        if hasattr(resource, 'prlimit'):
+            # No need to call command -- Python has direct support
+            prlimit_command = ''
+            pbs.logmsg(pbs.EVENT_DEBUG3,
+                       'Calling resource.prlimit(%s, resource.RLIMIT_AS, %s)'
+                       % (parent_pid, str((rlimit_as, rlimit_as))))
+            resource.prlimit(parent_pid, resource.RLIMIT_AS,
+                             (rlimit_as, rlimit_as))
+        elif os.path.isfile('/usr/bin/prlimit'):
+            prlimit_command = '/usr/bin/prlimit'
+        elif os.path.isfile('/bin/prlimit'):
+            prlimit_command = '/bin/prlimit'
+
+        if prlimit_command is None:
+            pbs.logmsg(pbs.EVENT_DEBUG, "cannot set rlimit_as for task: "
+                       "prlimit command not found")
+        elif prlimit_command != '':
+            cmd = [prlimit_command,
+                   '--as=' + str(rlimit_as) + ':' + str(rlimit_as),
+                   '--pid=' + str(parent_pid)]
+            pbs.logmsg(pbs.EVENT_DEBUG3, 'Running: ' + ' '.join(cmd))
+            try:
+                # Try running the prlimit command
+                process = subprocess.Popen(cmd, shell=False,
+                                           stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE)
+                out = process.communicate()[0]
+            except Exception:
+                pbs.logmsg(pbs.EVENT_ERROR,
+                           'Found but to failed to execute: %s' %
+                           ' '.join(cmd))
+
     def _execjob_launch_handler(self, event, cgroup, jobutil):
         """
         Handler for execjob_launch events.
@@ -872,7 +1245,15 @@ class HookUtils(object):
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        'assigned_resources: %s' %
                        (cgroup.assigned_resources))
-            cgroup.setup_job_devices_env(node.devices['gpu'])
+            if "gpu" in node.devices:
+                cgroup.setup_job_devices_env(node.devices['gpu'])
+
+        # If vmem was requested, set per process address space limit
+        # or clear the one MoM has set,
+        # if possible (requires prlimit support)
+        if (cgroup.cfg['manage_rlimit_as']
+                and cgroup.cfg['cgroup']['memsw']['enabled']):
+            self.manage_rlimit_as(pbs.event().job)
         return True
 
     def _exechost_periodic_handler(self, event, cgroup, jobutil):
@@ -930,38 +1311,36 @@ class HookUtils(object):
         # The memory limits are interdependent and might fail when set.
         # There are three limits. Worst case scenario is to loop three
         # times in order to set them all.
+        mem_on_node = 0
         for _ in range(3):
             result = True
             if 'memory' in cgroup.subsystems:
                 val = node.get_memory_on_node()
+                mem_on_node = val
                 if val is not None and val > 0:
-                    if not cgroup.cfg['vnode_per_numa_node']:
-                        event.vnode_list[host].resources_available['mem'] = \
-                            pbs.size(convert_size(val, 'kb'))
-                try:
-                    cgroup.set_limit('mem', val)
-                except Exception:
-                    result = False
+                    try:
+                        cgroup.set_limit('mem', val)
+                    except Exception:
+                        result = False
                 try:
                     val = int(cgroup.cfg['cgroup']['memory']['swappiness'])
                     cgroup.set_swappiness(val)
                 except Exception:
-                    pbs.logmsg(pbs.EVENT_DEBUG2,
+                    # error is not fatal, do not set result to False
+                    pbs.logmsg(pbs.EVENT_DEBUG,
                                '%s: Failed to set swappiness' % caller_name())
             if 'memsw' in cgroup.subsystems:
                 val = node.get_vmem_on_node()
+                if val < mem_on_node:
+                    val = mem_on_node
                 if val is not None and val > 0:
-                    event.vnode_list[host].resources_available['vmem'] = \
-                        pbs.size(convert_size(val, 'kb'))
                     try:
                         cgroup.set_limit('vmem', val)
                     except Exception:
                         result = False
             if 'hugetlb' in cgroup.subsystems:
-                val = node.get_hpmem_on_node()
+                val = node.get_hpmem_on_node(ignore_reserved=False)
                 if val is not None and val > 0:
-                    event.vnode_list[host].resources_available['hpmem'] = \
-                        pbs.size(convert_size(val, 'kb'))
                     try:
                         cgroup.set_limit('hpmem', val)
                     except Exception:
@@ -995,8 +1374,27 @@ class HookUtils(object):
                    caller_name())
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Host assigned job resources: %s' %
                    (caller_name(), jobutil.assigned_resources))
+        if (cgroup.cfg['cgroup']['cpuset']['enabled']
+                and not cgroup.cfg['cgroup']['cpuset']['allow_zero_cpus']):
+            if ('ncpus' not in jobutil.assigned_resources
+                    or jobutil.assigned_resources['ncpus'] <= 0):
+                if event.job.in_ms_mom():
+                    pbs.logmsg(pbs.EVENT_ERROR,
+                               'cpuset enabled with mandatory ncpus >= 1, '
+                               'but job does not request ncpus on '
+                               'mother superior: rejecting resize')
+                    event.reject('cpuset enabled with mandatory ncpus >= 1, '
+                                 'but job does not request ncpus on '
+                                 'mother superior: rejecting resize')
+                else:
+                    # will be done in configure_job
+                    pbs.logmsg(pbs.EVENT_ERROR,
+                               'cpuset enabled with mandatory ncpus >= 1, '
+                               'but job no longer requests ncpus on host: '
+                               'deleting cpuset cgroup')
+
         # Configure the cgroup
-        cgroup.configure_job(event.job.id, jobutil.assigned_resources,
+        cgroup.configure_job(event.job, jobutil.assigned_resources,
                              node, cgroup, event.type)
         # Write out the assigned resources
         cgroup.write_cgroup_assigned_resources(event.job.id)
@@ -1012,8 +1410,13 @@ class HookUtils(object):
                 for key in cgroup.assigned_resources['device_names']:
                     if key.startswith('mic'):
                         mics.append(key[3:])
-                    elif key.startswith('nvidia'):
-                        gpus.append(node.devices['gpu'][key]['uuid'])
+                    elif (key.startswith('nvidia')
+                            and "gpu" in node.devices
+                            and key in node.devices['gpu']):
+                        if 'uuid' in node.devices['gpu'][key]:
+                            gpus.append(node.devices['gpu'][key]['uuid'])
+                        if 'uuids' in node.devices['gpu'][key]:
+                            gpus.extend(node.devices['gpu'][key]['uuids'])
                 if mics:
                     env_list.append('OFFLOAD_DEVICES=%s' %
                                     ",".join(mics))
@@ -1153,25 +1556,22 @@ class JobUtils(object):
                        (caller_name(), hostname, repr(resources)))
             # Return assigned resources for specified host
             return resources
-        # Workaround for systems where node is short hostname
-        pbs.logmsg(pbs.EVENT_DEBUG2,
-                   '%s: No resources assigned to host %s' %
-                   (caller_name(), hostname))
-        try:
-            cmd = ['hostname', '-s']
-            process = subprocess.Popen(cmd, shell=False,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
-        except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG4, 'Failed to execute: %s' %
-                       " ".join(cmd))
-            return resources
-        shorthostname = out.strip()
-        if shorthostname and shorthostname != hostname:
-            return self._get_assigned_job_resources(hostname=shorthostname)
-        # Return assigned resources for specified host
-        return resources
+        else:
+            pbs.logmsg(pbs.EVENT_JOB_USAGE, "WARNING: job seems "
+                       + "to have no resources assigned to this host.")
+            pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                       "Server and MoM vnode names may not be consistent.")
+            pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                       "Pattern for expected vnode name(s) is %s"
+                       % vnhost_pattern)
+            pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                       "Job exec_vnode is %s" % str(self.job.exec_vnode))
+            pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                       "You may have forgotten to set PBS_MOM_NODE_NAME to "
+                       "the desired matching entry in the exec_vnode string")
+            pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                       "Job will fail or be configured with default ncpus/mem")
+            return {}
 
 
 #
@@ -1207,8 +1607,10 @@ class NodeUtils(object):
             self.numa_nodes = self._discover_numa_nodes()
         if devices is not None:
             self.devices = devices
-        else:
+        elif self.cfg['cgroup']['devices']['enabled']:
             self.devices = self._discover_devices()
+        else:
+            self.devices = {}
         # Add the devices count i.e. nmics and ngpus to the numa nodes
         self._add_device_counts_to_numa_nodes()
         # Information for offlining nodes
@@ -1284,7 +1686,11 @@ class NodeUtils(object):
                             convert_size(entries[3] + entries[4], 'kb')
                     elif entries[2] == 'HugePages_Total:':
                         numa_nodes[num]['HugePages_Total'] = int(entries[3])
-        # Spread memory resources across NUMA nodes
+        # Adjust NUMA nodes wrt reserved memory resource
+        # note that the get_* routines only work because this routine
+        # is called in the constructor; that constructor first
+        # sets self.numa_nodes to the empty dict, which triggers
+        # the get_* routines to use the non-NUMA section
         num_numa_nodes = len(numa_nodes)
         if self.cfg['vnode_per_numa_node'] and num_numa_nodes > 0:
             # Huge page memory
@@ -1292,36 +1698,45 @@ class NodeUtils(object):
             host_resv_hpmem = host_hpmem - self.get_hpmem_on_node()
             if host_resv_hpmem < 0:
                 host_resv_hpmem = 0
-            node_resv_hpmem = host_resv_hpmem / num_numa_nodes
-            node_resv_hpmem -= (node_resv_hpmem %
-                                size_as_int(self.meminfo['Hugepagesize']))
+            node_resv_hpmem = int(math.ceil(host_resv_hpmem / num_numa_nodes))
+            if 'Hugepagesize' in self.meminfo:
+                node_resv_hpmem -= \
+                    (node_resv_hpmem
+                     % size_as_int(self.meminfo['Hugepagesize']))
             # Physical memory
             host_mem = self.get_memory_on_node(ignore_reserved=True)
-            host_resv_mem = host_mem - self.get_memory_on_node()
+            host_mem_net = self.get_memory_on_node(ignore_reserved=False)
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       '%s: gross mem = %s, net mem = %s'
+                       % (caller_name(), host_mem, host_mem_net))
+            host_resv_mem = host_mem - host_mem_net
             if host_resv_mem < 0:
                 host_resv_mem = 0
-            node_resv_mem = host_resv_mem / num_numa_nodes
+            node_resv_mem = int(math.ceil(host_resv_mem / num_numa_nodes))
             node_resv_mem -= node_resv_mem % (1024 * 1024)
-            # Virtual memory
-            host_vmem = self.get_vmem_on_node(ignore_reserved=True)
-            host_resv_vmem = host_vmem - self.get_vmem_on_node()
-            if host_resv_vmem < 0:
-                host_resv_vmem = 0
-            node_resv_vmem = host_resv_vmem / num_numa_nodes
-            node_resv_vmem -= node_resv_vmem % (1024 * 1024)
+            # Swap to be added to virtual memory
+            # net values, taking into account reserved memory
+            host_vmem_net = self.get_vmem_on_node(ignore_reserved=False)
+            node_swapmem = int(math.floor((host_vmem_net - host_mem_net)
+                                          / num_numa_nodes))
+            if node_swapmem < 0:
+                node_swapmem = 0
+            node_swapmem -= node_swapmem % (1024 * 1024)
             # Set the NUMA node values
             for num in numa_nodes:
-                val = numa_nodes[num]['HugePages_Total']
-                val *= size_as_int(self.meminfo['Hugepagesize'])
-                val -= node_resv_hpmem
+                val = 0
+                if 'HugePages_Total' in numa_nodes[num]:
+                    val = numa_nodes[num]['HugePages_Total']
+                    if 'Hugepagesize' in self.meminfo:
+                        val *= size_as_int(self.meminfo['Hugepagesize'])
+                    val -= node_resv_hpmem
                 numa_nodes[num]['hpmem'] = val
                 val = size_as_int(numa_nodes[num]['MemTotal'])
-                val -= val % (1024 * 1024)
+                # round down only svr-reported values, not internal values
                 val -= node_resv_mem
                 numa_nodes[num]['mem'] = val
-                val = host_vmem / num_numa_nodes
-                val -= val % (1024 * 1024)
-                val -= node_resv_vmem
+                val += node_swapmem
+                # round down only svr-reported values, not internal values
                 numa_nodes[num]['vmem'] = val
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s' % (caller_name(), numa_nodes))
         return numa_nodes
@@ -1447,6 +1862,59 @@ class NodeUtils(object):
                                 devices[dclass][inst]['device'] = path
                                 devices[dclass][inst]['uuid'] = \
                                     gpus[gpuid]['uuid']
+        # if any gpu has mig enabled, let's use them
+        if gpus and any(gpus[gpu]['mig'] for gpu in gpus):
+            nvidia_cap_major = None
+            with open(os.path.join(os.sep, 'proc', 'devices')) as f:
+                for line in f:
+                    device = line.split()
+                    if len(device) != 2:
+                        continue
+                    if device[1] == 'nvidia-caps':
+                        nvidia_cap_major = int(device[0])
+                        break
+            if nvidia_cap_major is None:
+                pbs.logmsg(pbs.EVENT_SYSTEM, '%s: A GPU has MIG enabled, but'
+                           'nvidia-caps is not found in /proc/devices. '
+                           'Skipping MIG configuration'
+                           % caller_name())
+            else:
+                gis = {}
+                # we need major, minor, type, uuids, numa_node
+                for gpuid in gpus:
+                    if 'gis' not in gpus[gpuid]:
+                        continue
+                    for giid in gpus[gpuid]['gis']:
+                        gi = gpus[gpuid]['gis'][giid]
+                        if 'cis' not in gi:
+                            # no cis found for this gi, just skip
+                            continue
+                        name = 'nvidia-cap%d' % gi['minor']
+                        numa = devices['gpu'][gpuid]['numa_node']
+                        major = devices['gpu'][gpuid]['major']
+                        minor = devices['gpu'][gpuid]['minor']
+                        # extra_devs are the device numbers of the physical
+                        # gpu, as well as the nvidia controller
+                        new_gpu = {'major': nvidia_cap_major,
+                                   'minor': gi['minor'],
+                                   'is_gi': True,
+                                   'type': 'c',
+                                   'numa_node': numa,
+                                   'extra_devs': ['%d:%d' % (major, minor),
+                                                  '%d:255' % (major)],
+                                   'uuids': []
+                                   }
+                        for ciid in gi['cis']:
+                            ci = gi['cis'][ciid]
+                            new_gpu['uuids'].append(ci['uuid'])
+                            major = nvidia_cap_major
+                            minor = ci['minor']
+                            new_gpu['extra_devs'].append(
+                                '%d:%d' % (major, minor))
+                        devices['gpu'][name] = new_gpu
+                    del devices['gpu'][gpuid]
+
+        pbs.logmsg(pbs.EVENT_DEBUG4, 'Processed GPUs: %s' % devices['gpu'])
         if gpus and not devices['gpu']:
             pbs.logmsg(pbs.EVENT_SYSTEM, '%s: GPUs discovered but could not '
                        'be successfully mapped to devices.' % (caller_name()))
@@ -1459,15 +1927,20 @@ class NodeUtils(object):
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         gpus = {}
-        cmd = [self.cfg['nvidia-smi'], '-q', '-x']
+        if self.cfg['discover_gpus'] and self.cfg['nvidia-smi']:
+            cmd = [self.cfg['nvidia-smi'], '-q', '-x']
+        else:
+            return gpus
         pbs.logmsg(pbs.EVENT_DEBUG4, 'NVIDIA SMI command: %s' % cmd)
         time_start = time.time()
+        mig_found = False
         try:
             # Try running the nvidia-smi command
             process = subprocess.Popen(cmd, shell=False,
                                        stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out = process.communicate()[0]
         except Exception:
             pbs.logmsg(pbs.EVENT_DEBUG4, 'Failed to execute: %s' %
                        " ".join(cmd))
@@ -1478,10 +1951,12 @@ class NodeUtils(object):
             pbs.logmsg(pbs.EVENT_DEBUG,
                        '%s: nvidia-smi call took %f seconds' %
                        (caller_name(), elapsed_time))
+        # if we get a non-str type then convert before calling xmlet
+        # should not happen since we passed universal_newlines True
         try:
             # Try parsing the output
             import xml.etree.ElementTree as xmlet
-            root = xmlet.fromstring(out)
+            root = xmlet.fromstring(stringified_output(out))
             pbs.logmsg(pbs.EVENT_DEBUG4, 'root.tag: %s' % root.tag)
             for child in root:
                 if child.tag == 'gpu':
@@ -1496,14 +1971,203 @@ class NodeUtils(object):
                     if len(domain) != 4:
                         raise ValueError('GPU ID not recognized: ' + bus_id)
                     name = 'nvidia%s' % child.find('minor_number').text
+                    mig_enabled = False
+                    mig_mode = child.find('mig_mode')
+                    if mig_mode is not None:
+                        current_mig = mig_mode.find('current_mig')
+                        if current_mig is not None:
+                            if current_mig.text == 'Enabled':
+                                mig_found = True
+                                mig_enabled = True
                     gpus[name] = {
                         'pci_bus_id': (domain + ':' + instance).lower(),
-                        'uuid': child.find('uuid').text
+                        'uuid': child.find('uuid').text,
+                        'mig': mig_enabled
                     }
         except Exception as exc:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Unexpected error: %s' % exc)
+
+        # at least one gpu had mig enabled, let's add the gis
+        if mig_found:
+            self._discover_migs(gpus)
+
         pbs.logmsg(pbs.EVENT_DEBUG4, 'GPUs: %s' % gpus)
         return gpus
+
+    def _discover_migs(self, gpus):
+        """
+        Mutate the gpus dictionary with mig info, GIs and CIs
+        """
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        # find GIs
+        cmd = [self.cfg['nvidia-smi'], 'mig', '-lgi']
+        pbs.logmsg(pbs.EVENT_DEBUG4, 'NVIDIA SMI command: %s' % cmd)
+        time_start = time.time()
+        out = []
+        try:
+            # Try running the nvidia-smi command
+            process = subprocess.Popen(cmd, shell=False,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out = process.communicate()[0].split('\n')
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'Failed to execute: %s' %
+                       " ".join(cmd))
+            pbs.logmsg(pbs.EVENT_DEBUG3, '%s: No MIGs found' % caller_name())
+            return
+        elapsed_time = time.time() - time_start
+        if elapsed_time > 2.0:
+            pbs.logmsg(pbs.EVENT_DEBUG,
+                       '%s: nvidia-smi call took %f seconds' %
+                       (caller_name(), elapsed_time))
+
+        # format is
+        # | GPUID   NAME       ProfileID  GIID       PLACE     |
+        # |====================================================|
+        # |   0  MIG 1g.5gb       19        7          4:1     |
+        # +----------------------------------------------------+
+        # |   0  MIG 1g.5gb       19        8          5:1     |
+        r = re.compile(r'^\|\s+(\d+)\s+MIG\s+\S+\s+\d+\s+(\d+)\s+\S+\s+\|$')
+        for out_line in out:
+            match = r.match(out_line)
+            if not match:
+                continue
+            gpu_num = int(match.group(1))
+            gpuid = 'nvidia%d' % gpu_num
+            giid = int(match.group(2))
+            minor = self._discover_mig_minor(gpu_num, giid, ci=None)
+            gi = {'minor': minor, 'gi': giid}
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'GI found %s' % str(gi))
+            if 'gis' not in gpus[gpuid]:
+                gpus[gpuid]['gis'] = {}
+            gpus[gpuid]['gis'][giid] = gi
+
+        # Find all MIG UUIDs using nvidia-smi -L
+        # and update it later while finding the CIs
+        cmd = [self.cfg['nvidia-smi'], '-L']
+        pbs.logmsg(pbs.EVENT_DEBUG4, 'NVIDIA SMI command: %s' % cmd)
+        time_start = time.time()
+        out = []
+
+        try:
+            # Try running the nvidia-smi command
+            process = subprocess.Popen(cmd, shell=False,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out = process.communicate()[0].split('\n')
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'Failed to execute: %s' %
+                       " ".join(cmd))
+            pbs.logmsg(pbs.EVENT_DEBUG3, '%s: No MIGs found' % caller_name())
+            return
+        elapsed_time = time.time() - time_start
+        if elapsed_time > 2.0:
+            pbs.logmsg(pbs.EVENT_DEBUG,
+                       '%s: nvidia-smi call took %f seconds' %
+                       (caller_name(), elapsed_time))
+
+        # format is:
+        # GPU gpuID: gpu_name (UUID: GPU UUID)
+        # MIG xg.ygb      Device  0: (UUID: MIG-UUID)
+        # MIG xg.ygb      Device  1: (UUID: MIG-UUID)
+
+        # Map (gpu_id, instance_id) to a MIG UUID
+        uuid_map = dict()
+        r_gpu = re.compile(r'\s*GPU\s(\d+)')
+        r_mig = re.compile(r'\s*MIG.*Device\s*(\d+)')
+        current_gpu = 0
+        for out_line in out:
+            gpu_match = r_gpu.match(out_line)
+            mig_match = r_mig.match(out_line)
+            if gpu_match:
+                current_gpu = int(gpu_match.group(1))
+                uuid_map[current_gpu] = dict()
+            if mig_match:
+                mig_uuid = out_line.split()[-1].rstrip(")")
+                uuid_map[current_gpu][int(mig_match.group(1))] = mig_uuid
+
+        pbs.logmsg(pbs.EVENT_DEBUG4, "uuid map: %s" % str(uuid_map))
+
+        # now find all CIs
+        cmd = [self.cfg['nvidia-smi'], 'mig', '-lci']
+        pbs.logmsg(pbs.EVENT_DEBUG4, 'NVIDIA SMI command: %s' % cmd)
+        time_start = time.time()
+        out = []
+        try:
+            # Try running the nvidia-smi command
+            process = subprocess.Popen(cmd, shell=False,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out = process.communicate()[0].split('\n')
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'Failed to execute: %s' %
+                       " ".join(cmd))
+            pbs.logmsg(pbs.EVENT_DEBUG3, '%s: No MIGs found' % caller_name())
+            return
+        elapsed_time = time.time() - time_start
+        if elapsed_time > 2.0:
+            pbs.logmsg(pbs.EVENT_DEBUG,
+                       '%s: nvidia-smi call took %f seconds' %
+                       (caller_name(), elapsed_time))
+
+        # format is either
+        # | Compute instances:                                    |
+        # | GPU     GPU       Name             Profile   Instance |
+        # |       Instance                       ID        ID     |
+        # |         ID                                            |
+        # |   0      7       MIG 1g.5gb           0         0     |
+        # or
+        # | Compute instances:                                             |
+        # | GPU     GPU       Name         Profile   Instance   Placement  |
+        # |       Instance                   ID        ID       Start:Size |
+        # |         ID                                                     |
+        # |   0      7       MIG 1g.5gb       0         0          0:1     |
+        r = re.compile(
+            r'^\|\s+(\d+)\s+(\d+)\s+MIG\s+\S+\s+\d+\s+(\d+)\s+(\S+\s+)?\|$')
+
+        uuid_count = 0
+        gpu_num = 0
+        for out_line in out:
+            match = r.match(out_line)
+            if not match:
+                continue
+            # reset count if a new gpu is parsed
+            if gpu_num != int(match.group(1)):
+                uuid_count = 0
+            gpu_num = int(match.group(1))
+            gpuid = 'nvidia%d' % gpu_num
+            giid = int(match.group(2))
+            ciid = int(match.group(3))
+            minor = self._discover_mig_minor(gpu_num, giid, ciid)
+            if minor == -1:
+                continue
+            uuid = uuid_map[gpu_num][uuid_count]
+            uuid_count += 1
+            ci = {'minor': minor, 'gi': giid, 'ci': ciid, 'uuid': uuid}
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'CI found %s' % str(ci))
+            if 'cis' not in gpus[gpuid]['gis'][giid]:
+                gpus[gpuid]['gis'][giid]['cis'] = {}
+            gpus[gpuid]['gis'][giid]['cis'][ciid] = ci
+
+    def _discover_mig_minor(self, gpu, gi, ci=None):
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        path = os.path.join(os.sep, 'proc', 'driver',
+                            'nvidia-caps', 'mig-minors')
+        if ci is None:
+            capname = 'gpu%d/gi%d/access' % (gpu, gi)
+        else:
+            capname = 'gpu%d/gi%d/ci%d/access' % (gpu, gi, ci)
+        with open(path, 'r') as minors:
+            for line in minors:
+                cap, minor = line.split(' ', 1)
+                if cap == capname:
+                    return int(minor)
+        pbs.logmsg(pbs.EVENT_DEBUG, 'Cannot find minor number for %s'
+                   % capname)
+        return -1
 
     def _discover_meminfo(self):
         """
@@ -1569,14 +2233,14 @@ class NodeUtils(object):
         cpuinfo['hyperthreads_per_core'] = 1
         cpuinfo['hyperthreads'] = []
         # Now try to construct a dictionary with hyperthread information
-        # if this is an Intel or AMD EPYC based processor
+        # if this is an Intel based processor
         try:
-            if 'Intel' in cpuinfo['cpu'][0]['vendor_id'] or \
-               ('AMD' in cpuinfo['cpu'][0]['vendor_id'] and 'EPYC' in  cpuinfo['cpu'][0]['model name'].upper()):
+            if ('Intel' in cpuinfo['cpu'][0]['vendor_id']
+                    or 'AuthenticAMD' in cpuinfo['cpu'][0]['vendor_id']):
                 if 'ht' in cpuinfo['cpu'][0]['flags']:
                     cpuinfo['hyperthreads_per_core'] = \
-                        cpuinfo['cpu'][0]['siblings'] / \
-                        cpuinfo['cpu'][0]['cpu cores']
+                        int(cpuinfo['cpu'][0]['siblings']
+                            // cpuinfo['cpu'][0]['cpu cores'])
                     # Map hyperthreads to physical cores
                     if cpuinfo['hyperthreads_per_core'] > 1:
                         pbs.logmsg(pbs.EVENT_DEBUG4,
@@ -1604,13 +2268,24 @@ class NodeUtils(object):
                                     threads.add(yid)
                         pbs.logmsg(pbs.EVENT_DEBUG4, 'HT cores: %s' % threads)
                         cpuinfo['hyperthreads'] = sorted(threads)
+                    else:
+                        cores = cpuinfo['cpu'].keys()
+                        for xid in cores:
+                            cpuinfo['cpu'][xid]['threads'].append(xid)
         except Exception:
             pbs.logmsg(pbs.EVENT_DEBUG, '%s: Hyperthreading check failed' %
                        caller_name())
-        cpuinfo['physical_cpus'] = cpuinfo['logical_cpus'] / \
-            cpuinfo['hyperthreads_per_core']
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s returning: %s' %
-                   (caller_name(), cpuinfo))
+        cpuinfo['physical_cpus'] = int(cpuinfo['logical_cpus']
+                                       // cpuinfo['hyperthreads_per_core'])
+        wanted_keys = ['physical_cpus', 'logical_cpus',
+                       'hyperthreads_per_core', 'hyperthreads']
+        cpuinfo_short = dict((k, cpuinfo[k])
+                             for k in wanted_keys if k in cpuinfo)
+        pbs.logmsg(pbs.EVENT_DEBUG4, "%s returning: %s"
+                   % (caller_name(), cpuinfo_short))
+        if 0 in cpuinfo['cpu']:
+            pbs.logmsg(pbs.EVENT_DEBUG4, "%s For CPU 0: cpuinfo['cpu'][0]: %s"
+                       % (caller_name(), cpuinfo['cpu'][0]))
         return cpuinfo
 
     def gather_jobs_on_node(self, cgroup):
@@ -1627,9 +2302,12 @@ class NodeUtils(object):
                    'cgroup_jobs file content: %s' % str(jobdict))
         try:
             for jobfile in glob.glob(os.path.join(PBS_MOM_JOBS, '*.JB')):
-                (jobid, jbext) = os.path.splitext(os.path.basename(jobfile))
+                (jobid, dot_jb) = os.path.splitext(os.path.basename(jobfile))
                 if jobid not in jobdict:
+                    if os.stat_float_times():
                         jobdict[jobid] = os.path.getmtime(jobfile)
+                    else:
+                        jobdict[jobid] = float(os.path.getmtime(jobfile))
         except Exception:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Could not get job list for %s' %
                        self.hostname)
@@ -1646,14 +2324,14 @@ class NodeUtils(object):
             # Caller wants the sum of all NUMA nodes
             for nnid in self.numa_nodes:
                 if 'mem' in self.numa_nodes[nnid]:
-                    total += size_as_int(self.numa_nodes[nnid]['mem'])
+                    total += self.numa_nodes[nnid]['mem']
                 else:
+                    # NUMA node unreliable, make sure other method is used
                     total = 0
                     break
-            # Round down to nearest MB
-            total -= total % (1024 * 1024)
+            # only round down svr-reported values, not internal values
             if total > 0:
-                return size_as_int(total)
+                return total
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        '%s: Failed to obtain memory using NUMA node method' %
                        caller_name())
@@ -1670,7 +2348,7 @@ class NodeUtils(object):
             raise
         if total <= 0:
             raise ValueError('Total node memory value invalid')
-        pbs.logmsg(pbs.EVENT_DEBUG4, 'total mem: %d' % total)
+        pbs.logmsg(pbs.EVENT_DEBUG4, 'total visible mem: %d' % total)
         # Calculate reserved memory
         reserved = 0
         if not ignore_reserved:
@@ -1681,15 +2359,14 @@ class NodeUtils(object):
         pbs.logmsg(pbs.EVENT_DEBUG4, 'reserved mem: %d' % reserved)
         # Calculate remaining memory
         remaining = total - reserved
-        # Round down to nearest MB
-        remaining -= remaining % (1024 * 1024)
+        # only round down svr-reported values, not internal values
         if remaining <= 0:
             raise ValueError('Too much reserved memory')
         pbs.logmsg(pbs.EVENT_DEBUG4, 'remaining mem: %d' % remaining)
         amount = convert_size(str(remaining), 'kb')
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Returning: %s' %
                    (caller_name(), amount))
-        return size_as_int(remaining)
+        return remaining
 
     def get_vmem_on_node(self, vmemtotal=None, ignore_reserved=False):
         """
@@ -1697,21 +2374,29 @@ class NodeUtils(object):
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         total = 0
+        # If NUMA nodes were not yet discovered then get totals
+        # using non-NUMA methods
         if self.numa_nodes and self.cfg['vnode_per_numa_node']:
-            # Caller wants the sum of all NUMA nodes
+            # Caller wants the sum of all NUMA nodes, and they were
+            # computed earlier
             for nnid in self.numa_nodes:
                 if 'vmem' in self.numa_nodes[nnid]:
-                    total += size_as_int(self.numa_nodes[nnid]['vmem'])
+                    total += self.numa_nodes[nnid]['vmem']
                 else:
                     total = 0
                     break
-            # Round down to nearest MB
-            total -= total % (1024 * 1024)
+            # only round down svr-reported values, not internal values
             if total > 0:
-                return size_as_int(total)
+                return total
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        '%s: Failed to obtain vmem using NUMA node method' %
                        caller_name())
+        # Calculate total vmem; start with visible or usable physical memory
+        total = self.get_memory_on_node(None, ignore_reserved)
+        if ignore_reserved:
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'total visible mem: %d' % total)
+        else:
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'total usable mem: %d' % total)
         # Calculate total swap
         try:
             if vmemtotal is None:
@@ -1727,31 +2412,28 @@ class NodeUtils(object):
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        '%s: No swap space detected' %
                        caller_name())
+            swap = 0
         pbs.logmsg(pbs.EVENT_DEBUG4, 'total swap: %d' % swap)
-        # Calculate total vmem
-        total = self.get_memory_on_node()
-        pbs.logmsg(pbs.EVENT_DEBUG4, 'total mem: %d' % total)
-        total += swap
-        pbs.logmsg(pbs.EVENT_DEBUG4, 'total vmem: %d' % total)
-        # Calculate reserved vmem
+        # Calculate reserved swap
         reserved = 0
         if not ignore_reserved:
             reserve_pct = int(self.cfg['cgroup']['memsw']['reserve_percent'])
-            reserved += int(total * (reserve_pct / 100.0))
+            reserved += int(swap * (reserve_pct / 100.0))
             reserve_amount = self.cfg['cgroup']['memsw']['reserve_amount']
             reserved += size_as_int(reserve_amount)
-        pbs.logmsg(pbs.EVENT_DEBUG4, 'reserved vmem: %d' % reserved)
+            pbs.logmsg(pbs.EVENT_DEBUG4, 'reserved swap: %d' % reserved)
+            if reserved > swap:
+                reserved = swap
         # Calculate remaining vmem
-        remaining = total - reserved
-        # Round down to nearest MB
-        remaining -= remaining % (1024 * 1024)
+        remaining = total + swap - reserved
+        # only round down svr-reported values, not internal values
         if remaining <= 0:
             raise ValueError('Too much reserved vmem')
         pbs.logmsg(pbs.EVENT_DEBUG4, 'remaining vmem: %d' % remaining)
         amount = convert_size(str(remaining), 'kb')
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Returning: %s' %
                    (caller_name(), amount))
-        return size_as_int(remaining)
+        return remaining
 
     def get_hpmem_on_node(self, hpmemtotal=None, ignore_reserved=False):
         """
@@ -1763,14 +2445,13 @@ class NodeUtils(object):
             # Caller wants the sum of all NUMA nodes
             for nnid in self.numa_nodes:
                 if 'hpmem' in self.numa_nodes[nnid]:
-                    total += size_as_int(self.numa_nodes[nnid]['hpmem'])
+                    total += self.numa_nodes[nnid]['hpmem']
                 else:
                     total = 0
                     break
-            # Round down to nearest MB
-            total -= total % (1024 * 1024)
+            # only round down svr-reported values, not internal values
             if total > 0:
-                return size_as_int(total)
+                return total
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        '%s: Failed to obtain memory using NUMA node method' %
                        caller_name())
@@ -1783,10 +2464,10 @@ class NodeUtils(object):
             else:
                 total = size_as_int(hpmemtotal)
         except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG,
+            pbs.logmsg(pbs.EVENT_DEBUG3,
                        '%s: Could not determine huge page availability' %
                        caller_name())
-            raise
+            total = 0
         if total <= 0:
             total = 0
             pbs.logmsg(pbs.EVENT_DEBUG4,
@@ -1804,7 +2485,9 @@ class NodeUtils(object):
         # Calculate remaining vmem
         remaining = total - reserved
         # Round down to nearest huge page
-        remaining -= remaining % (size_as_int(self.meminfo['Hugepagesize']))
+        if 'Hugepagesize' in self.meminfo:
+            remaining -= (remaining
+                          % (size_as_int(self.meminfo['Hugepagesize'])))
         if remaining <= 0:
             raise ValueError('Too much reserved hpmem')
         pbs.logmsg(pbs.EVENT_DEBUG4, 'remaining hpmem: %d' % remaining)
@@ -1812,7 +2495,7 @@ class NodeUtils(object):
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Returning: %s' %
                    (caller_name(), amount))
         # Remove any bytes beyond the last MB
-        return size_as_int(remaining)
+        return remaining
 
     def create_vnodes(self, vntype=None):
         """
@@ -1832,51 +2515,162 @@ class NodeUtils(object):
                    (caller_name(), self.numa_nodes))
         vnode_name = self.hostname
         # In some cases the hostname and vnode name do not match
+        # admin should fix this!
+        # Give hints
         if vnode_name not in vnode_list:
-            vnkeys = list(vnode_list.keys())
-            if len(vnkeys) == 1:
-                vnode_name = vnkeys[0]
-            else:
-                raise ProcessingError('Could not identify local vnode')
+            pbs.logmsg(pbs.EVENT_ERROR,
+                       "Could not find hostname %s in vnode_list %s"
+                       % (vnode_name, str(vnode_list.keys())))
+            pbs.logmsg(pbs.EVENT_ERROR,
+                       "This error is FATAL. Possible causes:")
+            pbs.logmsg(pbs.EVENT_ERROR, "a) the server's name for "
+                       "the natural node created on the server "
+                       "does not match the output of 'hostname' on the host.")
+            pbs.logmsg(pbs.EVENT_ERROR, "   Please use PBS_MOM_NODE_NAME "
+                       "in /etc/pbs.conf to tell MoM the correct vnode name.")
+            pbs.logmsg(pbs.EVENT_ERROR, "b) v2 config files are used "
+                       "but none mention the natural vnode. Add a line for "
+                       "the natural vnode in one of the v2 config files.")
+            raise ProcessingError('Could not identify local vnode')
         vnode_list[vnode_name] = pbs.vnode(vnode_name)
         host_resc_avail = vnode_list[vnode_name].resources_available
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: host_resc_avail: %s' %
                    (caller_name(), host_resc_avail))
-        # Set the vnode type if supplied
-        if vntype:
+        # Set resources_available.vntype of natural node according
+        # to what's in local file if it needs to be propagated to server
+        if (vntype and self.cfg['propagate_vntype_to_server']):
             host_resc_avail['vntype'] = vntype
-            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: vnode type set to %s' %
-                       (caller_name(), vntype))
+            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: vnode type set to %s'
+                       % (caller_name(), vntype))
+
         vnode_msg_cpu = '%s: vnode_list[%s].resources_available[ncpus] = %d'
         vnode_msg_mem = '%s: vnode_list[%s].resources_available[mem] = %s'
+
+        if not vnodes:
+            # memory (global for host)
+            mem = self.get_memory_on_node(ignore_reserved=False)
+            # remove X MB - handle jitter in MemTotal observed in field
+            mem -= (1024 * 1024
+                    * self.cfg['cgroup']['memory']['vnode_hidden_mb'])
+            if mem < 0:
+                mem = 0
+            mem -= mem % (1024 * 1024)
+            mem = pbs.size(convert_size(mem, 'mb'))
+            host_resc_avail['mem'] = mem
+            pbs.logmsg(pbs.EVENT_DEBUG4, vnode_msg_mem %
+                       (caller_name(), vnode_name,
+                        str(host_resc_avail['mem'])))
+            # memory+swap ('vmem') (global for host)
+            vmem = self.get_vmem_on_node(ignore_reserved=False)
+            # remove X MB - handle jitter in MemTotal observed in field
+            vmem -= (1024 * 1024
+                     * self.cfg['cgroup']['memory']['vnode_hidden_mb'])
+            if vmem < 0:
+                vmem = 0
+            vmem -= vmem % (1024 * 1024)
+            # if there is no swap, trying to subtract vnode_hidden_mb
+            # will lower vmem under mem, do not allow
+            if vmem < mem:
+                vmem = mem
+            vmem = pbs.size(convert_size(vmem, 'mb'))
+            host_resc_avail['vmem'] = vmem
+            pbs.logmsg(pbs.EVENT_DEBUG4, vnode_msg_mem %
+                       (caller_name(), vnode_name,
+                        str(host_resc_avail['mem'])))
+            # huge page mem (global for host)
+            val = self.get_hpmem_on_node(ignore_reserved=False)
+            # remove X MB - handle jitter in mem reported by OS
+            val -= (1024 * 1024
+                    * self.cfg['cgroup']['hugetlb']
+                              ['vnode_hidden_mb'])
+            if val < 0:
+                val = 0
+            val -= val % (1024 * 1024)  # round down to MB
+            host_resc_avail['hpmem'] = \
+                pbs.size(convert_size(val, 'mb'))
+            if (self.cfg['cgroup']['memsw']['enabled']
+                    and self.cfg['cgroup']['memsw']['manage_cgswap']):
+                # special case 0 cgswap because assigning a "0mb"
+                # pbs.size difference causes a bug
+                if vmem == mem:
+                    host_resc_avail['cgswap'] = pbs.size('0')
+                else:
+                    host_resc_avail['cgswap'] = (host_resc_avail['vmem']
+                                                 - host_resc_avail['mem'])
+            else:
+                # This unsets it if it was defined earlier and needs to
+                # disappear
+                host_resc_avail['cgswap'] = None
+        else:
+            # set the value on the host to 0
+            host_resc_avail['mem'] = pbs.size('0')
+            host_resc_avail['vmem'] = pbs.size('0')
+            host_resc_avail['hpmem'] = pbs.size('0')
+            if (self.cfg['cgroup']['memsw']['enabled']
+                    and self.cfg['cgroup']['memsw']['manage_cgswap']):
+                host_resc_avail['cgswap'] = pbs.size('0')
+            # Some kernel drivers "reserve" memory on /proc/meminfo
+            # and this is not reflected in the node meminfo; if necessary,
+            # adjust the values published as resources_available.mem
+            # on the per-socket vnodes by the difference spread over nodes
+            adjust_bytes_per_node = 0
+            num_numa_nodes = len(self.numa_nodes)
+            total_nodemem = 0
+            for num in self.numa_nodes:
+                total_nodemem += size_as_int(self.numa_nodes[num]['MemTotal'])
+            total_hostmem = size_as_int(self.meminfo['MemTotal'])
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       '%s: host memtotal %s; node memtotal %s'
+                       % (caller_name(),
+                          str(total_hostmem), str(total_nodemem)))
+            if total_hostmem < total_nodemem:
+                adjust_bytes_per_node = \
+                    int(math.ceil((total_nodemem - total_hostmem)
+                                  / float(num_numa_nodes)))
+                pbs.logmsg(pbs.EVENT_DEBUG,
+                           '%s: host memtotal %s < node memtotal %s, '
+                           'adjusting each vnode mem down by %s bytes'
+                           % (caller_name(),
+                              str(total_hostmem), str(total_nodemem),
+                              str(adjust_bytes_per_node)))
         for nnid in self.numa_nodes:
             if vnodes:
                 vnode_key = vnode_name + '[%d]' % nnid
                 vnode_list[vnode_key] = pbs.vnode(vnode_name)
                 vnode_resc_avail = vnode_list[vnode_key].resources_available
-                if vntype:
+                # ensure that if no devices were discovered that
+                # ngpus is set to 0; otherwise MoM may still use stale value
+                vnode_resc_avail['ngpus'] = 0
+                if (vntype and self.cfg['propagate_vntype_to_server']):
                     vnode_resc_avail['vntype'] = vntype
             for key, val in sorted(self.numa_nodes[nnid].items()):
                 if key is None:
-                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: key is None' %
-                               caller_name())
+                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: key is None'
+                               % caller_name())
                     continue
                 if val is None:
-                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: val is None' %
-                               caller_name())
+                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: val is None'
+                               % caller_name())
                     continue
-                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s' %
-                           (caller_name(), key, val))
-                if key == 'cpus':
+                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s'
+                           % (caller_name(), key, val))
+                if key in ['MemTotal', 'HugePages_Total']:
+                    # Irrelevant: transformed to other keys if vnodes is True
+                    # done outside of loop if vnodes is False
+                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: key %s skipped'
+                               % (caller_name(), key))
+                elif key == 'cpus':
                     threads = len(val)
                     if not self.cfg['use_hyperthreads']:
                         # Do not treat a hyperthread as a core when
                         # use_hyperthreads is false.
-                        threads /= self.cpuinfo['hyperthreads_per_core']
+                        threads = int(threads
+                                      // self.cpuinfo['hyperthreads_per_core'])
                     elif self.cfg['ncpus_are_cores']:
                         # use_hyperthreads and ncpus_are_cores are both true,
                         # advertise only one thread per core
-                        threads /= self.cpuinfo['hyperthreads_per_core']
+                        threads = int(threads
+                                      // self.cpuinfo['hyperthreads_per_core'])
                     if vnodes:
                         # set the value on the host to 0
                         host_resc_avail['ncpus'] = 0
@@ -1886,7 +2680,7 @@ class NodeUtils(object):
                         # set the vnode value
                         vnode_resc_avail['ncpus'] = threads
                         pbs.logmsg(pbs.EVENT_DEBUG4, vnode_msg_cpu %
-                                   (caller_name(), vnode_name,
+                                   (caller_name(), vnode_key,
                                     vnode_resc_avail['ncpus']))
                     else:
                         if 'ncpus' not in host_resc_avail:
@@ -1899,39 +2693,26 @@ class NodeUtils(object):
                         pbs.logmsg(pbs.EVENT_DEBUG4, vnode_msg_cpu %
                                    (caller_name(), vnode_name,
                                     host_resc_avail['ncpus']))
-                elif key == 'MemTotal':
-                    mem = self.get_memory_on_node(memtotal=val)
-                    mem = pbs.size(convert_size(mem, 'kb'))
-                    if vnodes:
-                        # set the value on the host to 0
-                        host_resc_avail['mem'] = pbs.size('0kb')
-                        host_resc_avail['vmem'] = pbs.size('0kb')
-                    else:
-                        if 'mem' not in host_resc_avail:
-                            host_resc_avail['mem'] = pbs.size('0kb')
-                        if not isinstance(host_resc_avail['mem'], pbs.size):
-                            host_resc_avail['mem'] = pbs.size('0kb')
-                        host_resc_avail['mem'] += mem
-                        if 'vmem' not in host_resc_avail:
-                            host_resc_avail['vmem'] = pbs.size('0kb')
-                        if not isinstance(host_resc_avail['vmem'], pbs.size):
-                            host_resc_avail['vmem'] = pbs.size('0kb')
-                        host_resc_avail['vmem'] += mem
-                        pbs.logmsg(pbs.EVENT_DEBUG4, vnode_msg_mem %
-                                   (caller_name(), vnode_name,
-                                    str(host_resc_avail['mem'])))
-                elif key == 'HugePages_Total':
-                    # Used for the natural vnode
-                    if vnodes:
-                        # Set the value on the natural vnode to zero
-                        host_resc_avail['hpmem'] = pbs.size(0)
                 elif key in ['mem', 'vmem', 'hpmem']:
                     # Used for vnodes per NUMA socket
                     if vnodes:
                         mem_val = val
                         if isinstance(val, float):
                             mem_val = int(val)
-                        vnode_resc_avail[key] = pbs.size(mem_val)
+                        # remove X MB - handle jitter in mem reported by OS
+                        key_to_subsys = ({'mem': 'memory',
+                                          'vmem': 'memsw',
+                                          'hpmem': 'hugetlb'})
+                        if key != 'hpmem':
+                            mem_val -= adjust_bytes_per_node
+                        mem_val -= (1024 * 1024
+                                    * self.cfg['cgroup'][key_to_subsys[key]]
+                                                        ['vnode_hidden_mb'])
+                        if mem_val < 0:
+                            mem_val = 0
+                        mem_val -= mem_val % (1024 * 1024)
+                        vnode_resc_avail[key] = \
+                            pbs.size(convert_size(mem_val, 'mb'))
                 elif isinstance(val, list):
                     pass
                 elif isinstance(val, dict):
@@ -1954,8 +2735,29 @@ class NodeUtils(object):
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: vnode list: %s' %
                    (caller_name(), str(vnode_list)))
         if vnodes:
-            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: vnode_resc_avail: %s' %
-                       (caller_name(), vnode_resc_avail))
+            for nnid in self.numa_nodes:
+                vnode_key = vnode_name + '[%d]' % nnid
+                vnode_resc_avail = vnode_list[vnode_key].resources_available
+                # vmem can be smaller than mem if there is no swap, since
+                # we try to hide 1MB of swap from the server
+                if vnode_resc_avail['vmem'] < vnode_resc_avail['mem']:
+                    vnode_resc_avail['vmem'] = vnode_resc_avail['mem']
+                if (self.cfg['cgroup']['memsw']['enabled']
+                        and self.cfg['cgroup']['memsw']['manage_cgswap']):
+                    # Special case 0 cgswap since a bug creates a crash when
+                    # the "0mb" pbs.size difference is assigned to the resource
+                    if vnode_resc_avail['vmem'] == vnode_resc_avail['mem']:
+                        vnode_resc_avail['cgswap'] = pbs.size('0')
+                    else:
+                        vnode_resc_avail['cgswap'] = \
+                            vnode_resc_avail['vmem'] - vnode_resc_avail['mem']
+                else:
+                    # This unsets it if it was defined earlier and needs to
+                    # disappear
+                    host_resc_avail['cgswap'] = None
+
+                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s vnode_resc_avail: %s' %
+                           (caller_name(), vnode_key, vnode_resc_avail))
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: host_resc_avail: %s' %
                    (caller_name(), host_resc_avail))
         return True
@@ -1971,7 +2773,7 @@ class NodeUtils(object):
         # Assume vnode names resemble self.hostname[#]
         match_found = False
         for vnode_name in pbs.event().vnode_list:
-            if ((vnode_name == self.hostname) or
+            if (vnode_name == self.hostname or
                     re.match(self.hostname + r'\[.*\]', vnode_name)):
                 pbs.event().vnode_list[vnode_name].state = pbs.ND_OFFLINE
                 pbs.event().vnode_list[vnode_name].comment = self.offline_msg
@@ -2031,27 +2833,22 @@ class NodeUtils(object):
                        '%s: Too soon since node was offlined' % caller_name())
             return
         # Get comments for vnodes associated with this event
-        vnode_comments = dict()
-        try:
-            with Timeout(self.cfg['server_timeout'],
-                         'Timed out contacting server'):
-                for vnode_name in pbs.event().vnode_list:
-                    vnode_comments[vnode_name] = \
-                        pbs.server().vnode(vnode_name).comment
-        except TimeoutError:
-            pbs.logmsg(pbs.EVENT_DEBUG, '%s: Timed out contacting server' %
-                       caller_name())
-            return
-        except Exception as exc:
-            pbs.logmsg(pbs.EVENT_DEBUG, '%s: Error contacting server: %s' %
-                       (caller_name(), exc))
+        vnl = pbs.event().vnode_list.keys()
+        (vnode_comments, failure) = \
+            fetch_vnode_comments(vnl, timeout=self.cfg['server_timeout'])
+        if failure:
+            pbs.logmsg(pbs.EVENT_ERROR,
+                       '%s: Failed contacting server for vnode comments'
+                       % caller_name())
+            pbs.logmsg(pbs.EVENT_ERROR, '%s: Not bringing vnodes online'
+                       % caller_name())
             return
         # Bring vnodes online that this hook has taken offline
         for vnode_name in vnode_comments:
             if vnode_comments[vnode_name] != self.offline_msg:
-                pbs.logmsg(pbs.EVENT_DEBUG, '%s: Comment for vnode %s '
-                           'was not set by this hook' %
-                           (caller_name(), vnode_name))
+                pbs.logmsg(pbs.EVENT_DEBUG, ('%s: Comment for vnode %s '
+                                             + 'was not set by this hook')
+                           % (caller_name(), vnode_name))
                 continue
             vnode = pbs.event().vnode_list[vnode_name]
             vnode.state = pbs.ND_FREE
@@ -2081,8 +2878,7 @@ class CgroupUtils(object):
                  systemd_version=None):
         self.hostname = hostname
         self.vnode = vnode
-        # _check_os will raise an exception if cgroups are not present
-        self._check_os()
+
         # Read in the config file
         if cfg is not None:
             self.cfg = cfg
@@ -2093,40 +2889,84 @@ class CgroupUtils(object):
             self.systemd_version = systemd_version
         else:
             self.systemd_version = self._get_systemd_version()
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: systemd version seems to be %d'
+                   % (caller_name(), self.systemd_version))
         # Collect the cgroup mount points
         if paths is not None:
             self.paths = paths
         else:
             self.paths = self._get_paths()
-        # Raise an error if nothing is mounted
-        if not self.paths:
-            pbs.logmsg(pbs.EVENT_DEBUG2, '%s: No cgroups mounted' %
-                       caller_name())
-            raise CgroupProcessingError('No CPUs avaialble in cgroup')
+
         # Define the local vnode type
         if vntype is not None:
             self.vntype = vntype
         else:
             self.vntype = self._get_vnode_type()
+
+        # morph the strings that should become booleans
+        # into booleans depending on host/vntype
+        self.morph_config_dict_bools(self.cfg)
+        pbs.logmsg(pbs.EVENT_DEBUG4, "Final cgroup cfg: %s" % repr(self.cfg))
+
+        # Remove the added "enabled" in the cgroup section
+        # it's added at all levels in the cfg because of the recursion,
+        # but some of the code assumes only iterables are
+        # in the "cgroup" dictionary,
+        # without any guards to protect against extras!!
+        if "enabled" in self.cfg['cgroup']:
+            del self.cfg['cgroup']['enabled']
+
+        if not self.cfg['cgroup']['devices']['enabled']:
+            self.cfg['discover_gpus'] = False
+            pbs.logmsg(pbs.EVENT_DEBUG, 'discover_gpus set to False because '
+                       'devices subsystem is disabled')
+
         # Determine which subsystems we care about
         if subsystems is not None:
             self.subsystems = subsystems
         else:
             self.subsystems = self._target_subsystems()
+
+        # Check if memsw is enabled despite lack of kernel support
+        # if so disable memsw
+        if 'memsw' in self.subsystems:
+            memsw_limit_file = (self.paths['memsw']
+                                + 'limit_in_bytes')
+            if not os.path.isfile(memsw_limit_file):
+                pbs.logmsg(pbs.EVENT_ERROR,
+                           'CONFIG ERROR: CF enables memsw '
+                           'but %s is missing'
+                           % memsw_limit_file)
+                pbs.logmsg(pbs.EVENT_ERROR,
+                           'CONFIG ERROR: kernel swapaccount parameter is 0, '
+                           'disabling memsw subsystem')
+                pbs.logmsg(pbs.EVENT_ERROR,
+                           'CONFIG ERROR: to fix this, either add '
+                           'swapaccount=1 to kernel command line '
+                           'or disable memsw')
+                self.cfg['cgroup']['memsw']['enabled'] = False
+                self.subsystems.remove('memsw')
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           'remaining enabled subsystems: '
+                           + repr(self.subsystems))
+
         # Return now if nothing is enabled
         if not self.subsystems:
             pbs.logmsg(pbs.EVENT_DEBUG2, '%s: No cgroups enabled' %
                        caller_name())
             self.assigned_resources = {}
             return
+
         # Collect the cgroup resources
         if assigned_resources:
             self.assigned_resources = assigned_resources
         else:
             self.assigned_resources = self._get_assigned_cgroup_resources()
+
         # location to store information for the different hook events
         self.hook_storage_dir = os.path.join(PBS_MOM_HOME, 'mom_priv',
                                              'hooks', 'hook_data')
+
         if not os.path.isdir(self.hook_storage_dir):
             try:
                 os.makedirs(self.hook_storage_dir, 0o700)
@@ -2155,72 +2995,48 @@ class CgroupUtils(object):
                  repr(self.assigned_resources),
                  repr(self.systemd_version)))
 
-    def _check_os(self):
+    def write_to_stderr(self, job, msg):
         """
-        Validate the OS type and version
+        Write a message to the job stderr file
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        # Check to see if the platform is linux and the kernel is new enough
-        if platform.system() != 'Linux':
-            pbs.logmsg(pbs.EVENT_DEBUG, '%s: OS does not support cgroups' %
-                       caller_name())
-            raise CgroupConfigError('OS type not supported')
-        rel = list(map(int, (platform.release().split('-')[0].split('.'))))
-        pbs.logmsg(pbs.EVENT_DEBUG4,
-                   '%s: Detected Linux kernel version %d.%d.%d' %
-                   (caller_name(), rel[0], rel[1], rel[2]))
-        supported = False
-        if rel[0] > 2:
-            supported = True
-        elif rel[0] == 2:
-            if rel[1] > 6:
-                supported = True
-            elif rel[1] == 6:
-                if rel[2] >= 28:
-                    supported = True
-        if not supported:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: Kernel needs to be >= 2.6.28. Found %s.%s.%s' %
-                       (caller_name(), rel[0], rel[1], rel[2]))
-            raise CgroupConfigError('Kernel does not support cgroups')
-        return supported
+        filename = None
+        try:
+            if str(job.Join_Path) == 'oe':
+                # If we write in stderr we might do it after the join!
+                # so write in stdout instead
+                filename = job.stdout_file()
+            else:
+                filename = job.stderr_file()
+            pbs.logmsg(pbs.EVENT_DEBUG4, "Message to be written to %s: %s"
+                       % (str(filename), msg.strip()))
+            if filename is None:
+                return
+            with open(filename, 'a') as desc:
+                desc.write(msg)
+        except Exception:
+            # tough luck for user, but not fatal to system
+            # Note: sometimes normal (e.g. interactive jobs)
+            pass
 
     def _target_subsystems(self):
         """
         Determine which subsystems are being requested
+        Note that config file parsing has set "enabled" to false/true
+        if necessary by now, no need to delve in config dictionary
+        since self.enabled will discover it
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         # Check to see if this node is in the approved hosts list
-        if self.cfg['run_only_on_hosts']:
-            # Approved host list is not empty
-            if self.hostname not in self.cfg['run_only_on_hosts']:
-                pbs.logmsg(pbs.EVENT_DEBUG,
-                           '%s is not in the approved host list: %s' %
-                           (self.hostname, self.cfg['run_only_on_hosts']))
-                return []
-        else:
-            # Approved host list is empty. Check to see if self.hostname
-            # is in the excluded host list.
-            if self.hostname in self.cfg['exclude_hosts']:
-                pbs.logmsg(pbs.EVENT_DEBUG,
-                           '%s is in the excluded host list: %s' %
-                           (self.hostname, self.cfg['exclude_hosts']))
-                return []
-            # Check to see if the local vnode type is in the excluded
-            # vnode type list.
-            if self.vntype in self.cfg['exclude_vntypes']:
-                pbs.logmsg(pbs.EVENT_DEBUG,
-                           '%s is in the excluded vnode type list: %s' %
-                           (self.vntype, self.cfg['exclude_vntypes']))
-                return []
         subsystems = []
         for key in self.cfg['cgroup']:
             if self.enabled(key):
                 subsystems.append(key)
         # Add an entry for systemd if anything else is enabled. This allows
         # the hook to cleanup any directories systemd leaves behind.
+        # Add at start since we want this processed first
         if subsystems and self.systemd_version >= 205:
-            subsystems.append('systemd')
+            subsystems.insert(0, 'systemd')
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Enabled subsystems: %s' %
                    (caller_name(), subsystems))
         # It is not an error for all subsystems to be disabled.
@@ -2236,6 +3052,9 @@ class CgroupUtils(object):
         subdir = os.path.dirname(dest)
         parent = os.path.dirname(subdir)
         source = os.path.join(parent, filename)
+        pbs.logmsg(pbs.EVENT_DEBUG4,
+                   'Copying value from %s to %s'
+                   % (source, dest))
         if not os.path.isfile(source):
             raise CgroupConfigError('Failed to read %s' % (source))
         with open(source, 'r') as desc:
@@ -2256,13 +3075,13 @@ class CgroupUtils(object):
                 prefix = subsys + '.2MB.'
             elif subsys == 'memsw':
                 prefix = 'memory.' + subsys + '.'
-            elif subsys in ['freezer', 'systemd']:
+            elif subsys in ['systemd', 'perf_event']:
                 prefix = ''
             else:
                 prefix = subsys + '.'
-        if self.systemd_version < 205:
-            return os.path.join(mnt_point, self.cfg['cgroup_prefix'], prefix)
-        return os.path.join(mnt_point, str(self.cfg['cgroup_prefix']) + '.slice',
+        return os.path.join(mnt_point,
+                            str(self.cfg['cgroup_prefix'])
+                            + '.service/jobid',
                             prefix)
 
     def _get_paths(self):
@@ -2272,6 +3091,39 @@ class CgroupUtils(object):
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         paths = {}
+        subsys_to_discover = {'blkio', 'cpu', 'cpuacct', 'cpuset', 'devices',
+                              'freezer', 'hugetlb', 'memory', 'net_cls',
+                              'net_prio', 'perf_event', 'pids', 'rdma',
+                              'systemd'}
+        subsys_to_skip = set()
+
+        # First deal with the ones with paths set in the configuration file
+        for subsys in subsys_to_discover:
+            if (subsys in self.cfg['cgroup']
+                    and 'mount_path' in self.cfg['cgroup'][subsys]
+                    and self.cfg['cgroup'][subsys]['mount_path']):
+                flags = []
+                if (subsys == 'cpuset'
+                        and os.path.exists(os.path.join(self.cfg['cgroup']
+                                                                ['cpuset']
+                                                                ['mount_path'],
+                                                        'cpus'))):
+                    flags = ['noprefix']
+                paths[subsys] = \
+                    self._assemble_path(subsys,
+                                        self.cfg['cgroup'][subsys]
+                                                ['mount_path'],
+                                        flags)
+                # memory -> memsw, different prefix
+                if (subsys == 'memory'):
+                    paths['memsw'] = \
+                        self._assemble_path(subsys,
+                                            self.cfg['cgroup']['memory']
+                                                    ['mount_path'],
+                                            flags)
+                subsys_to_skip.add(subsys)
+        subsys_to_discover -= subsys_to_skip
+
         # Loop through the mounts and collect the ones for cgroups
         with open(os.path.join(os.sep, 'proc', 'mounts'), 'r') as desc:
             for line in desc:
@@ -2281,23 +3133,32 @@ class CgroupUtils(object):
                 # It is possible to have more than one cgroup mounted in
                 # the same place, so check them all for each mount.
                 flags = entries[3].split(',')
-                for subsys in ['blkio', 'cpu', 'cpuacct', 'cpuset', 'devices',
-                               'freezer', 'hugetlb', 'pids']:
-                    if subsys in flags:
-                        paths[subsys] = self._assemble_path(subsys, entries[1],
-                                                            flags)
-                if 'memory' in flags:
-                    paths['memory'] = \
-                        self._assemble_path('memory', entries[1], flags)
-                    # memory and memsw share a common mount point,
-                    # but use a different prefix
-                    paths['memsw'] = \
-                        self._assemble_path('memsw', entries[1], flags)
-                if 'systemd' in flags or 'name=systemd' in flags:
-                    paths['systemd'] = \
-                        self._assemble_path('systemd', entries[1], flags)
-        if not paths:
-            raise CgroupConfigError('Cgroup paths not detected')
+                for subsys in subsys_to_discover:
+                    if (subsys in flags
+                            or (subsys == 'systemd'
+                                and ('name=systemd' in flags))):
+                        subsys_path_candidate = \
+                            self._assemble_path(subsys, entries[1], flags)
+                        # If there are more than one option, prefer shortest
+                        if (subsys not in paths
+                            or (len(paths[subsys])
+                                > len(subsys_path_candidate))):
+                            if subsys in paths:
+                                pbs.logmsg(pbs.EVENT_DEBUG3,
+                                           '_get_paths: shorter path+prefix '
+                                           '%s used for subsystem %s'
+                                           % (subsys_path_candidate, subsys))
+                            if subsys == 'memory':
+                                # memory and memsw share a common mount point,
+                                # but use a different prefix
+                                paths['memsw'] = \
+                                    self._assemble_path('memsw', entries[1],
+                                                        flags)
+                            paths[subsys] = subsys_path_candidate
+
+        # if a host does not have any cgroup controllers mounted
+        # don't panic here, let main code handle it by just accepting event
+
         return paths
 
     def _cgroup_path(self, subsys, cgfile='', jobid=''):
@@ -2318,19 +3179,209 @@ class CgroupUtils(object):
         if not cgfile:
             if jobid:
                 # Caller wants parent directory of job
-                return os.path.join(subdir,
-                                    self._jobid_to_systemd_subdir(jobid), '')
-            # Caller wants parent directory of subsystem
+                return os.path.join(subdir, jobid, '')
+            # Caller wants job parent directory for subsystem
             return os.path.join(subdir, '')
         # Caller wants full path to file
         if cgfile == 'tasks':
             # tasks file never uses a prefix
-            return os.path.join(subdir, self._jobid_to_systemd_subdir(jobid),
+            return os.path.join(subdir, jobid,
                                 cgfile)
         if jobid:
-            return os.path.join(subdir, self._jobid_to_systemd_subdir(jobid),
+            return os.path.join(subdir, jobid,
                                 prefix + cgfile)
         return os.path.join(subdir, prefix + cgfile)
+
+    def morph_config_dict_bools(self, config_dict, subsection=None):
+        """
+        function to morph 'vntype in: vntype1,vntype2,...'
+        and 'vntype not in: ...' values
+        into booleans depending on the vntype in the CgroupConfig object
+        Ditto for 'host in:' and 'host not in:'
+        Convert old run_only_on_hosts and exclude_vntypes to derive
+        'enabled' boolean (which will now _always_ be defined)
+        """
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        vntype = self.vntype
+        # avoid crashes in fnmatch if no vntype was specified on the host
+        if not vntype:
+            vntype = "__UNKNOWN__"
+        # get a 'basestring' type that identifies all string types
+        # already exists in Python 2 (has both std and unicode strings)
+        # but not in Python 3, which only has "str" (always unicode)
+        try:
+            basestring
+        except NameError:
+            basestring = str
+        # We want a view/iterator object, not something that creates copied
+        # lists. iteritems/viewitems() no longer exists in Py3
+        # since items() itself is now implemented as a view object.
+        dict_iter_object = (config_dict.iteritems() if PYTHON2
+                            else config_dict.items())
+        for key_found, value_found in dict_iter_object:
+            if isinstance(value_found, dict):
+                # subsection found
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           "%s: Cfg file parsing, subsection for %s"
+                           % (caller_name(), key_found))
+                self.morph_config_dict_bools(value_found, key_found)
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           "%s: Cfg file parsing, finished subsection for %s"
+                           % (caller_name(), key_found))
+            elif isinstance(value_found, basestring):
+                # string value -- could be morphable description
+                value_split = value_found.strip().split(':', 1)
+                if (len(value_split) > 1
+                        and value_split[0].lower().strip() == 'vntype in'):
+                    vntypes_t_unstripped = value_split[1].split(',')
+                    vntypes_t = [item.strip() for item in vntypes_t_unstripped]
+                    if any([fnmatch.fnmatch(vntype, p) for p in vntypes_t]):
+                        config_dict[key_found] = True
+                    else:
+                        config_dict[key_found] = False
+                    pbs.logmsg(pbs.EVENT_DEBUG4,
+                               "%s: Config file parsing,"
+                               " set %s to %s based on vntype inclusion"
+                               % (caller_name(), key_found,
+                                  str(config_dict[key_found])))
+                elif (len(value_split) > 1
+                        and value_split[0].lower().strip() == 'vntype not in'):
+                    vntypes_f_unstripped = value_split[1].split(',')
+                    vntypes_f = [item.strip() for item in vntypes_f_unstripped]
+                    if any([fnmatch.fnmatch(vntype, p) for p in vntypes_f]):
+                        config_dict[key_found] = False
+                    else:
+                        config_dict[key_found] = True
+                    pbs.logmsg(pbs.EVENT_DEBUG4,
+                               "%s: Config file parsing,"
+                               " set %s to %s based on vntype exclusion"
+                               % (caller_name(), key_found,
+                                  str(config_dict[key_found])))
+                elif (len(value_split) > 1
+                        and value_split[0].lower().strip() == 'host in'):
+                    hosts_t_unstripped = value_split[1].split(',')
+                    hosts_t = [item.strip() for item in hosts_t_unstripped]
+                    if any([fnmatch.fnmatch(self.hostname, p)
+                            for p in hosts_t]):
+                        config_dict[key_found] = True
+                    else:
+                        config_dict[key_found] = False
+                    pbs.logmsg(pbs.EVENT_DEBUG4,
+                               "%s: Config file parsing,"
+                               " set %s to %s based on host inclusion"
+                               % (caller_name(), key_found,
+                                  str(config_dict[key_found])))
+                elif (len(value_split) > 1
+                        and value_split[0].lower().strip() == 'host not in'):
+                    hosts_f_unstripped = value_split[1].split(',')
+                    hosts_f = [item.strip() for item in hosts_f_unstripped]
+                    if any([fnmatch.fnmatch(self.hostname, p)
+                            for p in hosts_f]):
+                        config_dict[key_found] = False
+                    else:
+                        config_dict[key_found] = True
+                    pbs.logmsg(pbs.EVENT_DEBUG4,
+                               "%s: Config file parsing,"
+                               " set %s to %s based on host exclusion"
+                               % (caller_name(), key_found,
+                                  str(config_dict[key_found])))
+
+        # Old "exclude_vntypes" now modulates current "enabled"
+        # (if present) or creates it if non-empty
+        if ("exclude_vntypes" in config_dict
+                and config_dict['exclude_vntypes']):
+            if ("enabled" not in config_dict
+                    or not isinstance(config_dict['enabled'], bool)):
+                config_dict['enabled'] = False
+            if (config_dict['enabled'] and
+                    any([fnmatch.fnmatch(vntype, p)
+                         for p in config_dict['exclude_vntypes']])):
+                config_dict['enabled'] = False
+                if subsection is None:
+                    subname = 'all subsystems'
+                else:
+                    subname = 'subsystem ' + subsection
+                pbs.logmsg(pbs.EVENT_DEBUG,
+                           '%s: cgroup excluded for '
+                           '%s on vnode type %s' %
+                           (caller_name(), subname, vntype))
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           '%s is in the excluded vnode type list: %s' %
+                           (vntype, config_dict['exclude_vntypes']))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "%s: Config file parsing, "
+                       "set %s to %s based on exclude_vntypes"
+                       % (caller_name(), 'enabled',
+                          str(config_dict['enabled'])))
+
+        # Old "exclude_hosts" now modulates current "enabled" (if present)
+        # or creates enabled if it is non-empty
+        if ("exclude_hosts" in config_dict
+                and config_dict['exclude_hosts']):
+            if ("enabled" not in config_dict
+                    or not isinstance(config_dict['enabled'], bool)):
+                config_dict['enabled'] = False
+            if (config_dict['enabled'] and
+                any([fnmatch.fnmatch(self.hostname, p)
+                     for p in config_dict['exclude_hosts']])):
+                config_dict['enabled'] = False
+                if subsection is None:
+                    subname = 'all subsystems'
+                else:
+                    subname = 'subsystem ' + subsection
+                pbs.logmsg(pbs.EVENT_DEBUG,
+                           '%s: cgroup excluded for '
+                           '%s on host %s' %
+                           (caller_name(), subname, self.hostname))
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           '%s is in the excluded host list: %s' %
+                           (self.hostname, config_dict['exclude_hosts']))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "%s: Config file parsing, "
+                       "set %s to %s based on exclude_hosts"
+                       % (caller_name(), 'enabled',
+                          str(config_dict['enabled'])))
+        # mirror image include_hosts of old "exclude_hosts"
+        # now modulates current "enabled" (if present)
+        # or creates enabled if it is non-empty
+        if ("include_hosts" in config_dict
+                and config_dict['include_hosts']):
+            if ("enabled" not in config_dict
+                    or not isinstance(config_dict['enabled'], bool)):
+                config_dict['enabled'] = \
+                    (any([fnmatch.fnmatch(self.hostname, p)
+                          for p in config_dict['include_hosts']]))
+            else:
+                config_dict['enabled'] = \
+                    (config_dict['enabled']
+                     or any([fnmatch.fnmatch(self.hostname, p)
+                             for p in config_dict['include_hosts']]))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "%s: Config file parsing, "
+                       "set %s to %s based on include_hosts"
+                       % (caller_name(), 'enabled',
+                          str(config_dict['enabled'])))
+
+        # Add "disabled" if unspecified
+        if "enabled" not in config_dict:
+            config_dict['enabled'] = False
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "%s: Config file parsing, "
+                       "section disabled by default"
+                       % caller_name())
+
+        # Old "run_only_on_hosts" limits enabled hosts if present
+        if ("run_only_on_hosts" in config_dict
+                and config_dict['run_only_on_hosts']):
+            config_dict['enabled'] = \
+                (config_dict['enabled']
+                 and any([fnmatch.fnmatch(self.hostname, p)
+                          for p in config_dict['run_only_on_hosts']]))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "%s: Config file parsing,"
+                       " set %s to %s based on run_only_on_hosts"
+                       % (caller_name(), 'enabled',
+                          str(config_dict['enabled'])))
 
     @staticmethod
     def parse_config_file():
@@ -2342,9 +3393,11 @@ class CgroupUtils(object):
         # when the configuration file is read. Keep the keys in sync
         # with the default cgroup configuration files.
         defaults = {}
-        defaults['cgroup_prefix'] = 'pbspro'
+        defaults['enabled'] = True
+        defaults['cgroup_prefix'] = 'pbs_jobs'
         defaults['cgroup_lock_file'] = os.path.join(PBS_MOM_HOME, 'mom_priv',
                                                     'cgroups.lock')
+        defaults['discover_gpus'] = True
         defaults['nvidia-smi'] = os.path.join(os.sep, 'usr', 'bin',
                                               'nvidia-smi')
         defaults['exclude_hosts'] = []
@@ -2360,8 +3413,20 @@ class CgroupUtils(object):
         defaults['server_timeout'] = 15
         defaults['job_setup_timeout'] = 30
         defaults['placement_type'] = 'load_balanced'
-        defaults['no_enforcement_hosts'] = []
+        defaults['propagate_vntype_to_server'] = True
+        defaults['manage_rlimit_as'] = True
         defaults['cgroup'] = {}
+        defaults['cgroup']['cpu'] = {}
+        defaults['cgroup']['cpu']['enabled'] = False
+        defaults['cgroup']['cpu']['exclude_hosts'] = []
+        defaults['cgroup']['cpu']['exclude_vntypes'] = []
+        defaults['cgroup']['cpu']['cfs_period_us'] = 100000
+        defaults['cgroup']['cpu']['cfs_quota_fudge_factor'] = 1.03
+        defaults['cgroup']['cpu']['enforce_per_period_quota'] = False
+        # For zero_cpus_shares_fraction, the default value of 0.002 * 1000 = 2,
+        # which is the smallest value allowed by kernel as cpu.shares
+        defaults['cgroup']['cpu']['zero_cpus_shares_fraction'] = 0.002
+        defaults['cgroup']['cpu']['zero_cpus_quota_fraction'] = 0.2
         defaults['cgroup']['blkio'] = {}
         defaults['cgroup']['blkio']['enabled'] = False
         defaults['cgroup']['cpuacct'] = {}
@@ -2376,34 +3441,52 @@ class CgroupUtils(object):
         defaults['cgroup']['cpuset']['mem_fences'] = True
         defaults['cgroup']['cpuset']['mem_hardwall'] = False
         defaults['cgroup']['cpuset']['memory_spread_page'] = False
+        defaults['cgroup']['cpuset']['allow_zero_cpus'] = True
         defaults['cgroup']['devices'] = {}
         defaults['cgroup']['devices']['enabled'] = False
         defaults['cgroup']['devices']['exclude_hosts'] = []
         defaults['cgroup']['devices']['exclude_vntypes'] = []
         defaults['cgroup']['devices']['allow'] = []
-        defaults['cgroup']['hugetlb'] = {}
-        defaults['cgroup']['hugetlb']['enabled'] = False
-        defaults['cgroup']['hugetlb']['exclude_hosts'] = []
-        defaults['cgroup']['hugetlb']['exclude_vntypes'] = []
-        defaults['cgroup']['hugetlb']['default'] = '0MB'
-        defaults['cgroup']['hugetlb']['reserve_percent'] = 0
-        defaults['cgroup']['hugetlb']['reserve_amount'] = '0MB'
         defaults['cgroup']['memory'] = {}
         defaults['cgroup']['memory']['enabled'] = False
         defaults['cgroup']['memory']['exclude_hosts'] = []
         defaults['cgroup']['memory']['exclude_vntypes'] = []
         defaults['cgroup']['memory']['soft_limit'] = False
         defaults['cgroup']['memory']['default'] = '0MB'
+        defaults['cgroup']['memory']['enforce_default'] = True
+        defaults['cgroup']['memory']['exclhost_ignore_default'] = False
         defaults['cgroup']['memory']['reserve_percent'] = 0
         defaults['cgroup']['memory']['reserve_amount'] = '0MB'
-        defaults['cgroup']['memory']['swappiness'] = 10
+        defaults['cgroup']['memory']['vnode_hidden_mb'] = 1
+        defaults['cgroup']['memory']['swappiness'] = 1
         defaults['cgroup']['memsw'] = {}
         defaults['cgroup']['memsw']['enabled'] = False
         defaults['cgroup']['memsw']['exclude_hosts'] = []
         defaults['cgroup']['memsw']['exclude_vntypes'] = []
         defaults['cgroup']['memsw']['default'] = '0MB'
+        defaults['cgroup']['memsw']['enforce_default'] = True
+        defaults['cgroup']['memsw']['exclhost_ignore_default'] = False
         defaults['cgroup']['memsw']['reserve_percent'] = 0
         defaults['cgroup']['memsw']['reserve_amount'] = '0MB'
+        defaults['cgroup']['memsw']['vnode_hidden_mb'] = 1
+        defaults['cgroup']['memsw']['manage_cgswap'] = False
+        defaults['cgroup']['hugetlb'] = {}
+        defaults['cgroup']['hugetlb']['enabled'] = False
+        defaults['cgroup']['hugetlb']['exclude_hosts'] = []
+        defaults['cgroup']['hugetlb']['exclude_vntypes'] = []
+        defaults['cgroup']['hugetlb']['default'] = '0MB'
+        defaults['cgroup']['hugetlb']['enforce_defaults'] = True
+        defaults['cgroup']['hugetlb']['exclhost_ignore_default'] = False
+        defaults['cgroup']['hugetlb']['reserve_percent'] = 0
+        defaults['cgroup']['hugetlb']['reserve_amount'] = '0MB'
+        defaults['cgroup']['hugetlb']['vnode_hidden_mb'] = 1
+
+        # These are unmanaged -- if enabled only creation/removal
+        # and filling in 'tasks' are currently performed
+        defaults['cgroup']['blkio'] = {}
+        defaults['cgroup']['blkio']['enabled'] = False
+        defaults['cgroup']['freezer'] = {}
+        defaults['cgroup']['freezer']['enabled'] = False
         defaults['cgroup']['net_cls'] = {}
         defaults['cgroup']['net_cls']['enabled'] = False
         defaults['cgroup']['net_prio'] = {}
@@ -2412,6 +3495,8 @@ class CgroupUtils(object):
         defaults['cgroup']['perf_event']['enabled'] = False
         defaults['cgroup']['pids'] = {}
         defaults['cgroup']['pids']['enabled'] = False
+        defaults['cgroup']['rdma'] = {}
+        defaults['cgroup']['rdma']['enabled'] = False
 
         # Identify the config file and read in the data
         config_file = ''
@@ -2445,32 +3530,123 @@ class CgroupUtils(object):
             with open(config_file, 'r') as desc:
                 config = merge_dict(defaults,
                                     json.load(desc, object_hook=decode_dict))
+            # config file entries denotes reserved _swap_
+            # but vnode_hidden_mb used in code for vmem relies
+            # on total for physical plus swap (i.e. memsw)
+            config['cgroup']['memsw']['vnode_hidden_mb'] += \
+                config['cgroup']['memory']['vnode_hidden_mb']
+
         except IOError:
             raise CgroupConfigError('I/O error reading config file')
         pbs.logmsg(pbs.EVENT_DEBUG4,
                    '%s: cgroup hook configuration: %s' %
                    (caller_name(), config))
+        config['cgroup_prefix'] = systemd_escape(config['cgroup_prefix'])
         return config
+
+    def _create_service(self):
+        """
+        Create the pbs_jobs.service systemd service
+        """
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        if self.systemd_version < 205:
+            return
+        if (pbs.event().type == pbs.EXECJOB_BEGIN):
+            # normally service is there for this event -- if so, return
+            try:
+                cmd = ['systemctl', 'is-active', self.cfg['cgroup_prefix']]
+                process = subprocess.Popen(cmd, shell=False,
+                                           stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE,
+                                           universal_newlines=True)
+                out = process.communicate()[0]
+                if (process.returncode == 0):
+                    # service is already active -- no need to create it
+                    return
+                else:
+                    pbs.logmsg(pbs.EVENT_DEBUG,
+                               '%s: systemctl is-active <svc> return code %s'
+                               % (caller_name(), process.returncode))
+            except Exception:
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           '%s: Failed to call systemctl is-active'
+                           % caller_name())
+                # was worth a try -- try to create service now
+                # and see if that fails
+                pass
+        description = 'PBS Pro job parent service'
+        servicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
+                                   self.cfg['cgroup_prefix'] + '.service')
+        try:
+            with open(servicefile, 'w') as desc:
+                desc.write('[Unit]\n'
+                           'Description=%s\n'
+                           '[Service]\n'
+                           'Type=simple\n'
+                           'Slice=-.slice\n'
+                           'TasksMax=infinity\n'
+                           'RemainAfterExit=yes\n'
+                           'ExecStart=/bin/sleep infinity\n'
+                           'ExecStop=/bin/true\n'
+                           'CPUAccounting=off\n'
+                           'MemoryAccounting=off\n'
+                           'Delegate=yes'
+                           % description)
+                desc.truncate()
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG, '%s: Failed to write service file: %s'
+                       % (caller_name(), servicefile))
+            raise
+        try:
+            cmd = ['systemctl', 'start', os.path.basename(servicefile)]
+            process = subprocess.Popen(cmd, shell=False,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out, err = process.communicate()
+            if (process.returncode == 0):
+                pbs.logmsg(pbs.EVENT_DEBUG,
+                           '%s: Started systemd service with file %s'
+                           % (caller_name(), servicefile))
+            else:
+                pbs.logmsg(pbs.EVENT_ERROR,
+                           '%s: systemctl start <svc> return code %s'
+                           % (caller_name(), process.returncode))
+                pbs.logmsg(pbs.EVENT_ERROR, '%s: stderr of systemctl was: %s'
+                           % (caller_name(),
+                              stringified_output(err)))
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG,
+                       '%s: Failed to start systemd service: %s'
+                       % (caller_name(), os.path.basename(servicefile)))
+            raise
 
     def create_paths(self):
         """
         Create the cgroup parent directories that will contain the jobs
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        old_umask = os.umask(0o022)
         try:
-            # Create a systemd slice for PBS
-            self._create_slice()
+            # Create a systemd service for PBS jobs (if necessary)
+            self._create_service()
             # Create the directories that PBS will use to house the jobs
-            old_umask = os.umask(0o022)
+            # now under the controller mount at <prefix>.service/jobid
             for subsys in self.subsystems:
                 subdir = self._cgroup_path(subsys)
                 if not subdir:
-                    raise CgroupConfigError('No path for subsystem: %s' %
-                                            (subsys))
+                    raise CgroupConfigError('No path for subsystem: %s'
+                                            % (subsys))
+                created = False
                 if not os.path.exists(subdir):
                     os.makedirs(subdir, 0o755)
+                    created = True
                     pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Created directory %s' %
                                (caller_name(), subdir))
+                if (not created and pbs.event().type == pbs.EXECJOB_BEGIN):
+                    # only exechost_startup configures values in the cgroups
+                    # if they exist
+                    continue
                 if subsys == 'memory' or subsys == 'memsw':
                     # Enable 'use_hierarchy' for memory when either memory
                     # or memsw is in use.
@@ -2482,142 +3658,30 @@ class CgroupUtils(object):
                         self.write_value(filename, 1)
                     except CgroupBusyError:
                         # Some kernels do not like the value written when
-                        # other jobs are running.
+                        # other jobs are running, or if the parent already
+                        # enabled use_hierarchy.
+                        # But then things were already set up anyway
                         pass
                 elif subsys == 'cpuset':
+                    # copy <cgroup_prefix>.services cpuset values
+                    # from its parent (root), then copy those to
+                    # directory under it; necessary if systemd is not there
+                    (cpuset_dir, cpus_file) = \
+                        os.path.split(self._cgroup_path(subsys, 'cpus'))
+                    (memset_dir, mems_file) = \
+                        os.path.split(self._cgroup_path(subsys, 'mems'))
+                    cpuset_pardir = \
+                        os.path.dirname(cpuset_dir)
+                    self._copy_from_parent(os.path.join(cpuset_pardir,
+                                                        cpus_file))
+                    self._copy_from_parent(os.path.join(cpuset_pardir,
+                                                        mems_file))
                     self._copy_from_parent(self._cgroup_path(subsys, 'cpus'))
                     self._copy_from_parent(self._cgroup_path(subsys, 'mems'))
         except Exception as exc:
             raise CgroupConfigError('Failed to create cgroup paths: %s' % exc)
         finally:
             os.umask(old_umask)
-
-    def _create_slice(self, jobid=None):
-        """
-        Create the cgroup slice for the parent or job
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        if self.systemd_version < 205:
-            return
-        if jobid:
-            description = 'PBS Pro job %s' % jobid
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self._jobid_to_systemd_subdir(jobid))
-        else:
-            description = 'PBS Pro parent'
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self.cfg['cgroup_prefix'] + '.slice')
-        try:
-            with open(slicefile, 'w') as desc:
-                desc.write('[Unit]\n'
-                           'Description=%s\n'
-                           '[Slice]\n'
-                           'DeviceAllow=/dev/nvidiactl\n'
-                           'DeviceAllow=/dev/nvidia-uvm\n'
-                           'DeviceAllow=/dev/nvidia-uvm-tools\n'
-                           'DeviceAllow=/dev/nvidia-modeset\n'
-                           'DeviceAllow=block-loop\n'
-                           'DeviceAllow=/dev/loop-control\n'
-                           'DeviceAllow=/dev/fuse\n'
-                           'DeviceAllow=/dev/net/tun\n'
-                           'DeviceAllow=/dev/infiniband/rdma_cm\n'
-                           'DeviceAllow=char-infiniband_verbs\n'
-                           'DeviceAllow=char-infiniband_cm\n'
-                           'DeviceAllow=char-hfi1\n'
-                           'CPUShares=1024\n'
-                           'TasksMax=infinity\n' % description)
-                desc.truncate()
-        except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG, '%s: Failed to write slice file: %s' %
-                       (caller_name(), slicefile))
-            raise
-        try:
-            cmd = ['systemctl', 'start', os.path.basename(slicefile)]
-            process = subprocess.Popen(cmd, shell=False,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
-        except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: Failed to start systemd slice: %s' %
-                       (caller_name(), os.path.basename(slicefile)))
-            raise
-
-    def _set_slice_property(self, property, value, jobid=None):
-        """
-        Update cgroup slice property (so that systemd does not spoil them upon reload)
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        if self.systemd_version < 205:
-            return
-        if jobid:
-            description = 'PBS Pro job %s' % jobid
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self._jobid_to_systemd_subdir(jobid))
-        else:
-            description = 'PBS Pro parent'
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self.cfg['cgroup_prefix'] + '.slice')
-        try:
-            cmd = ['systemctl', 'set-property', '--runtime', os.path.basename(slicefile),
-                  '%s=%s' % (property, value) ]
-            process = subprocess.Popen(cmd, shell=False,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
-        except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: Failed to set systemd slice property: %s %s=%s' %
-                       (caller_name(), os.path.basename(slicefile), property, value))
-            raise
-
-    def _delete_slice(self, jobid=None):
-        """
-        Delete the cgroup slice for the parent or job
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        if self.systemd_version < 205:
-            return
-        if jobid:
-            description = 'PBS Pro job %s' % jobid
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self._jobid_to_systemd_subdir(jobid))
-        else:
-            description = 'PBS Pro parent'
-            slicefile = os.path.join(os.sep, 'run', 'systemd', 'system',
-                                     self.cfg['cgroup_prefix'] + '.slice')
-        try:
-            cmd = ['systemctl', 'stop', os.path.basename(slicefile)]
-            process = subprocess.Popen(cmd, shell=False,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
-        except Exception:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: Failed to stop systemd slice: %s' %
-                       (caller_name(), os.path.basename(slicefile)))
-            raise
-        if os.path.isfile(slicefile):
-            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Removing slice file %s' %
-                       (caller_name(), slicefile))
-            try:
-                os.remove(slicefile)
-            except Exception:
-                pbs.logmsg(pbs.EVENT_DEBUG,
-                           '%s: Failed to delete slice file: %s' %
-                           (caller_name(), slicefile))
-                raise
-        else:
-            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Slice file missing %s' %
-                       (caller_name(), slicefile))
-
-        if jobid:
-            runcontrol = os.path.join(os.sep, 'run', 'systemd', 'system.control',
-                                     self._jobid_to_systemd_subdir(jobid) + '.d')
-            try:
-                shutil.rmtree(runcontrol, ignore_errors=True)
-            except:
-                pass
 
     def _get_vnode_type(self):
         """
@@ -2671,26 +3735,54 @@ class CgroupUtils(object):
         """
         Return a dictionary of currently assigned cgroup resources per job
         """
+        # if jobs have a limit *exactly* equal to the total limit available
+        # for all jobs, then they have no explicit memory req and the
+        # limit is the result of an 'unlimited' default;
+        # in that case, the scheduler assigned 0, so be consistent with it
+
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         assigned = {}
+
+        # Get totals available for all jobs to compare with later
+        mem_avail = None
+        filename = self._cgroup_path('memory', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                mem_avail = int(desc.readline())
+        vmem_avail = None
+        filename = self._cgroup_path('memsw', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                vmem_avail = int(desc.readline())
+        hpmem_avail = None
+        filename = self._cgroup_path('hugetlb', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                hpmem_avail = int(desc.readline())
+        pbs.logmsg(pbs.EVENT_DEBUG4, "get_assigned_cgroup_resources:"
+                   " total host avail mem=%s vmem=%s hpmem=%s"
+                   % (mem_avail, vmem_avail, hpmem_avail))
+
         for key in self.paths:
+            if key in ('blkio', 'cpu', 'cpuacct', 'freezer',
+                       'net_cls', 'net_prio', 'perf_event',
+                       'pids', 'rdma', 'systemd'):
+                continue
+            if not self.enabled(key):
+                continue
             path = os.path.dirname(self._cgroup_path(key))
-            # Adjust the wildcard for systemd, do not exclude orphans
-            pattern = self._systemd_subdir_wildcard()
+            # do not exclude orphans
+            pattern = self._glob_subdir_wildcard()
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Examining %s' %
-                       (caller_name(), pattern))
+                       (caller_name(), os.path.join(path, pattern)))
             for subdir in glob.glob(os.path.join(path, pattern)):
-                jobid = self._systemd_subdir_to_jobid(os.path.basename(subdir))
+                jobid = os.path.basename(subdir)
                 if not jobid:
                     continue
                 pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Job ID is %s' %
                            (caller_name(), jobid))
                 if jobid not in assigned:
                     assigned[jobid] = {}
-                if key in ('blkio', 'cpu', 'cpuacct', 'freezer', 'systemd'):
-                    continue
-                if not self.enabled(key):
-                    continue
                 if key not in assigned[jobid]:
                     assigned[jobid][key] = {}
                 if key == 'cpuset':
@@ -2701,50 +3793,66 @@ class CgroupUtils(object):
                         assigned[jobid][key]['mems'] = \
                             expand_list(desc.readline())
                 elif key == 'memory':
-                    with open(self._cgroup_path(key, 'limit_in_bytes',
-                                                jobid)) as desc:
-                        assigned[jobid][key]['limit_in_bytes'] = \
-                            int(desc.readline())
-                    with open(self._cgroup_path(key, 'soft_limit_in_bytes',
-                                                jobid)) as desc:
-                        assigned[jobid][key]['soft_limit_in_bytes'] = \
-                            int(desc.readline())
-                elif key == 'memsw':
-                    filename = self._cgroup_path('memsw', 'limit_in_bytes',
-                                                 jobid)
-                    if os.path.isfile(filename):
+                    filename = self._cgroup_path(key, 'limit_in_bytes', jobid)
+                    if filename and os.path.isfile(filename):
                         with open(filename) as desc:
-                            assigned[jobid]['memsw'] = {}
-                            assigned[jobid]['memsw']['limit_in_bytes'] = \
+                            assigned[jobid][key]['limit_in_bytes'] = \
                                 int(desc.readline())
+                        if assigned[jobid][key]['limit_in_bytes'] == mem_avail:
+                            # not explicitly assigned, 'unlimited' raised dflt
+                            assigned[jobid][key]['limit_in_bytes'] = 0
+                    filename = self._cgroup_path(key,
+                                                 'soft_limit_in_bytes', jobid)
+                    if filename and os.path.isfile(filename):
+                        with open(filename) as desc:
+                            assigned[jobid][key]['soft_limit_in_bytes'] = \
+                                int(desc.readline())
+                        if (assigned[jobid][key]['soft_limit_in_bytes']
+                                == mem_avail):
+                            # not explicitly assigned, 'unlimited' raised dflt
+                            assigned[jobid][key]['soft_limit_in_bytes'] = 0
+                elif key == 'memsw':
+                    filename = self._cgroup_path(key, 'limit_in_bytes', jobid)
+                    if filename and os.path.isfile(filename):
+                        with open(filename) as desc:
+                            assigned[jobid][key]['limit_in_bytes'] = \
+                                int(desc.readline())
+                        if (assigned[jobid][key]['limit_in_bytes']
+                                == vmem_avail):
+                            # not explicitly assigned, 'unlimited' raised dflt
+                            assigned[jobid][key]['limit_in_bytes'] = 0
                     else:
                         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: No such file: %s' %
                                    (caller_name(), filename))
                 elif key == 'hugetlb':
-                    with open(self._cgroup_path(key, 'limit_in_bytes',
-                                                jobid)) as desc:
-                        assigned[jobid][key]['limit_in_bytes'] = \
-                            int(desc.readline())
+                    filename = self._cgroup_path(key, 'limit_in_bytes', jobid)
+                    if filename and os.path.isfile(filename):
+                        with open(filename) as desc:
+                            assigned[jobid][key]['limit_in_bytes'] = \
+                                int(desc.readline())
+                        if (assigned[jobid][key]['limit_in_bytes']
+                                == hpmem_avail):
+                            # not explicitly assigned, 'unlimited' raised dflt
+                            assigned[jobid][key]['limit_in_bytes'] = 0
                 elif key == 'devices':
                     path = self._cgroup_path(key, 'list', jobid)
                     pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Devices path is %s' %
                                (caller_name(), path))
-                    with open(path) as desc:
-                        assigned[jobid][key]['list'] = []
-                        for line in desc:
-                            pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Appending %s' %
-                                       (caller_name(), line))
-                            assigned[jobid][key]['list'].append(line)
-                            pbs.logmsg(pbs.EVENT_DEBUG4,
-                                       '%s: assigned[%s][%s][list] = %s' %
-                                       (caller_name(), jobid, key,
-                                        assigned[jobid][key]['list']))
-                elif key == 'pids':
-                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: subsystem %s' %
-                               (caller_name(), key))
-                elif key == 'systemd':
-                    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: subsystem %s' %
-                               (caller_name(), key))
+                    if path and os.path.isfile(path):
+                        with open(path) as desc:
+                            assigned[jobid][key]['list'] = []
+                            for line in desc:
+                                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: '
+                                           'Appending %s'
+                                           % (caller_name(), line))
+                                assigned[jobid][key]['list'].append(line)
+                                pbs.logmsg(pbs.EVENT_DEBUG4,
+                                           '%s: assigned[%s][%s][list] '
+                                           '= %s'
+                                           % (caller_name(), jobid, key,
+                                              assigned[jobid][key]['list']))
+                # Note: unmanaged but known subsystems should be filtered
+                # at the top of the loop body
                 else:
                     pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Unknown subsystem %s' %
                                (caller_name(), key))
@@ -2760,139 +3868,64 @@ class CgroupUtils(object):
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         ver = 0
         try:
-            process = subprocess.Popen(['systemctl', '--version'], shell=False,
+            process = subprocess.Popen(['systemctl', '--system', 'show',
+                                        '--property=Version'],
+                                       shell=False,
                                        stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
-            ver = int(re.sub(r'systemd ([0-9]+)', r'\1', out.splitlines()[0]))
+                                       stderr=subprocess.PIPE,
+                                       universal_newlines=True)
+            out = process.communicate()[0]
+            # if we get a non-str type then convert
+            # before calling splitlines
+            # should not happen since we pass universal_newlines True
+            # Note: some versions prepend "Version=", other versions
+            # add a more precise version in parentheses after a space
+            out_split = stringified_output(out).splitlines()
+            ver = int(re.sub(r'Version=\D*(\d+)', r'\1',
+                             out_split[0].split()[0]))
         except Exception:
-            # Loop through the mounts to see if systemd is present. Do not
-            # rely on self.paths because it has not been initialized yet.
-            with open(os.path.join(os.sep, 'proc', 'mounts'), 'r') as desc:
-                for line in desc:
-                    entries = line.split()
-                    if entries[2] != 'cgroup':
-                        continue
-                    flags = entries[3].split(',')
-                    if 'systemd' in flags or 'name=systemd' in flags:
-                        # Must be at least version 205 if the cgroup is present
-                        return 205
-            # systemd is missing or broken
+            # Note we also get here if we can't decode an int version
+            return 0
+        if not os.path.exists(
+                os.path.join(os.sep, 'run', 'systemd', 'system')):
+            # no place to drop unit files? systemd not running in system mode?
             return 0
         return ver
 
-    def _systemd_subdir_wildcard(self, extension=''):
+    def _glob_subdir_wildcard(self, extension=''):
         """
         Return a string that may be used as a pattern with glob.glob
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        buf = self._systemd_escape(self.cfg['cgroup_prefix'])
-        buf += '-[0-9]*'
+        buf = '[0-9]*'
         if extension:
-            buf += '.' + self._systemd_escape(extension)
+            buf += '.' + extension
         return buf
-
-    def _systemd_subdir_to_jobid(self, subdir):
-        """
-        Extract the jobid from the subdirectory provided
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        escaped = re.sub(r'%s-(.*).slice$' % self.cfg['cgroup_prefix'],
-                         r'\1', subdir)
-        return self._systemd_unescape(escaped)
-
-    def _jobid_to_systemd_subdir(self, jobid):
-        """
-        Convert the supplied jobid to its directory format
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        return '%s-%s.slice' % (self.cfg['cgroup_prefix'],
-                                self._systemd_escape(jobid))
-
-    def _systemd_escape(self, buf):
-        """
-        Escape strings for usage in system unit names
-        Some distros don't provide the systemd-escape command
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        if not isinstance(buf, str):
-            raise ValueError('Not a basetype string')
-        ret = ''
-        for i, char in enumerate(buf):
-            if i < 1 and char == '.':
-                ret += '\\x' + char.encode("utf-8").hex()
-                continue
-            if char.isalnum() or char in '_.':
-                ret += char
-            elif char == '/':
-                ret += '-'
-            else:
-                hexval = char.encode("utf-8").hex()
-                for j in range(0, len(hexval), 2):
-                    ret += '\\x' + hexval[j:j + 2]
-        return ret
-
-    def _systemd_unescape(self, buf):
-        """
-        Unescape strings encoded for usage in system unit names
-        Some distros don't provide the systemd-escape command
-        """
-        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        if not isinstance(buf, str):
-            raise ValueError('Not a basetype string')
-        ret = ''
-        length = len(buf)
-        i = 0
-        while i < length:
-            if (length - i) > 3 and buf[i] == '\\' and buf[i + 1] == 'x' and \
-                buf[i + 2] in '0123456789abcdef' and \
-                    buf[i + 3] in '0123456789abcdef':
-                ret += bytes.fromhex(buf[(i + 2):(i + 4)]).decode('utf-8')
-                i += 4
-                continue
-            if buf[i] == '-':
-                ret += '/'
-            elif buf[i].isalnum() or buf[i] in '_.':
-                ret += buf[i]
-            else:
-                raise ValueError('Invalid systemd escaped string')
-            i += 1
-        return ret
 
     def enabled(self, subsystem):
         """
-        Return whether a subsystem is enabled
+        Return whether a subsystem is enabled.
+        if we get here OS is supported: if a controller is enabled
+        in the cfg file but the controller is not mounted,
+        it is a configuration error that should be fixed
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         # Check whether the subsystem is enabled in the configuration file
         if subsystem not in self.cfg['cgroup']:
             return False
-        if 'enabled' not in self.cfg['cgroup'][subsystem]:
+        if ('enabled' in self.cfg
+                and isinstance(self.cfg['enabled'], bool)
+                and not self.cfg['enabled']):
             return False
-        if not self.cfg['cgroup'][subsystem]['enabled']:
-            return False
-        if subsystem == 'cpuset' and self.check_no_enforcement(self.hostname):
+        if ('enabled' not in self.cfg['cgroup'][subsystem]
+                or not self.cfg['cgroup'][subsystem]['enabled']):
             return False
         # Check whether the cgroup is mounted for this subsystem
         if subsystem not in self.paths:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: cgroup not mounted for %s' %
-                       (caller_name(), subsystem))
+            raise CgroupConfigError('%s: cgroups enabled '
+                                    'but not mounted for subsystem %s'
+                                    % (caller_name(), subsystem))
             return False
-        # Check whether this host is excluded
-        if self.hostname in self.cfg['cgroup'][subsystem]['exclude_hosts']:
-            pbs.logmsg(pbs.EVENT_DEBUG,
-                       '%s: cgroup excluded for subsystem %s on host %s' %
-                       (caller_name(), subsystem, self.hostname))
-            return False
-        # Check whether the vnode type is excluded
-        if self.vntype is not None:
-            if self.vntype in self.cfg['cgroup'][subsystem]['exclude_vntypes']:
-                pbs.logmsg(pbs.EVENT_DEBUG,
-                           ('%s: cgroup excluded for '
-                            'subsystem %s on vnode type %s') %
-                           (caller_name(), subsystem, self.vntype))
-                return False
         return True
 
     def default(self, subsystem):
@@ -2961,7 +3994,7 @@ class CgroupUtils(object):
                             pids.append(int(entries[0]))
             except (OSError, IOError):
                 # PIDs may come and go as we read /proc so the glob data can
-                # become stale. Tollerate failures in this case.
+                # become stale. Tolerate failures in this case.
                 pass
         return pids
 
@@ -2971,8 +4004,19 @@ class CgroupUtils(object):
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         # make pids a list
+        pids = []
         if isinstance(pidarg, int):
-            pids = self._get_pids_in_sid(os.getsid(pidarg))
+            sid = 0
+            try:
+                sid = os.getsid(pidarg)
+            except OSError as exc:
+                sid = -1
+                pbs.logmsg(pbs.EVENT_DEBUG2,
+                           '%s: Request to attach session of non-existing'
+                           ' PID %s to jobid %s'
+                           % (caller_name(), pidarg, jobid))
+            if (sid > 1):
+                pids = self._get_pids_in_sid(sid)
         elif isinstance(pidarg, list):
             for pid in pidarg:
                 if not isinstance(pid, int):
@@ -3020,6 +4064,19 @@ class CgroupUtils(object):
             if subsys == 'memsw' and 'memory' in self.subsystems:
                 continue
             tasks_file = self._cgroup_path(subsys, 'tasks', jobid)
+            if ((not os.path.exists(tasks_file))
+                    and (subsys == 'cpuset')):
+                if (self.cfg['cgroup']['cpuset']['enabled']
+                        and not self.cfg['cgroup']['cpuset']
+                                        ['allow_zero_cpus']):
+                    pbs.logmsg(pbs.EVENT_JOB_USAGE,
+                               'No cpuset cgroup present '
+                               'and npcus==0 disallowed')
+                    pbs.event().reject('No cpuset cgroup present '
+                                       'and npcus==0 disallowed')
+                else:
+                    # zero CPU job: should be attached to root pbs cpuset
+                    tasks_file = self._cgroup_path(subsys, 'tasks')
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: tasks file = %s' %
                        (caller_name(), tasks_file))
             try:
@@ -3051,7 +4108,10 @@ class CgroupUtils(object):
                 if name.startswith('mic'):
                     offload_devices.append(name[3:])
                 elif name.startswith('nvidia'):
-                    cuda_visible_devices.append(gpus[name]['uuid'])
+                    if 'uuid' in gpus[name]:
+                        cuda_visible_devices.append(gpus[name]['uuid'])
+                    if 'uuids' in gpus[name]:
+                        cuda_visible_devices.extend(gpus[name]['uuids'])
             if offload_devices:
                 value = "\\,".join(offload_devices)
                 pbs.event().env['OFFLOAD_DEVICES'] = '%s' % value
@@ -3091,6 +4151,8 @@ class CgroupUtils(object):
             if devclass == 'mic' or devclass == 'gpu':
                 for instance in devices[devclass]:
                     dev = devices[devclass][instance]
+                    if 'extra_devs' in dev:
+                        accelerators.extend(dev['extra_devs'])
                     accelerators.append('%d:%d' % (dev['major'], dev['minor']))
         # For CentOS 7 we need to remove a *:* rwm from devices.list
         # before we can add anything to devices.allow. Otherwise our
@@ -3112,7 +4174,6 @@ class CgroupUtils(object):
                    devices_allow)
         for item in devices_allow:
             if isinstance(item, str):
-                self.write_value(self._cgroup_path('devices', 'allow'), item)
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'string item: %s' % item)
                 self.write_value(devices_allow_file, item)
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'write_value: %s' % value)
@@ -3193,8 +4254,9 @@ class CgroupUtils(object):
                                              device_info['major'])
                 if dev_entry not in device_allowed:
                     device_allowed.append(dev_entry)
-            elif device_kind == 'gpu':
+            elif device_kind == 'gpu' and not device_info.get('is_gi', False):
                 # Requires the ctrl (255) to be added
+                # unless GPU is a GI from a MIG GPU
                 dev_entry = '%s %d:255 rwm' % (device_info['type'],
                                                device_info['major'])
                 if dev_entry not in device_allowed:
@@ -3206,6 +4268,14 @@ class CgroupUtils(object):
                                           device_info['minor'])
             if dev_entry not in device_allowed:
                 device_allowed.append(dev_entry)
+            # if there are extra majors/minors, add them too
+            if 'extra_devs' in device_info:
+                for extra in device_info['extra_devs']:
+                    dev_entry = '%s %s rwm' % (device_info['type'],
+                                               extra)
+                    if dev_entry not in device_allowed:
+                        device_allowed.append(dev_entry)
+
         return device_names, device_allowed
 
     def get_device_name(self, node, available, socket, major, minor):
@@ -3298,27 +4368,24 @@ class CgroupUtils(object):
             if self.cfg['use_hyperthreads'] and self.cfg['ncpus_are_cores']:
                 needed *= node.cpuinfo['hyperthreads_per_core']
             if needed > avail:
-                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Insufficient ncpus: %s/%s' %
-                           (caller_name(), needed, avail))
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           '%s: insufficient ncpus: %s needed, %s available'
+                           % (caller_name(), needed, avail))
                 return {}
             if self.cfg['use_hyperthreads']:
                 # Find cores that are fully available
                 empty_cores = set()
-                for corenum in cores:
-                    if set(node.cpuinfo['cpu'][corenum]['threads']).issubset(
-                            set(available['cpus'])):
+                for corenum in sorted(cores):
+                    if (corenum not in node.cpuinfo['hyperthreads']
+                            and set(node.cpuinfo['cpu'][corenum]['threads'])
+                            .issubset(set(available['cpus']))):
                         # All hyperthreads available for this core
                         empty_cores.add(corenum)
                 # Assign threads from the empty cores
-                for corenum in empty_cores:
-                    assigned['cpuset.cpus'].append(corenum)
-                    cores.remove(corenum)
-                    needed -= 1
-                    if needed <= 0:
-                        break
+                for corenum in sorted(empty_cores):
                     for thread in node.cpuinfo['cpu'][corenum]['threads']:
                         if thread in assigned['cpuset.cpus']:
-                            # thread core already assigned
+                            # this thread is already assigned
                             continue
                         assigned['cpuset.cpus'].append(thread)
                         needed -= 1
@@ -3332,12 +4399,20 @@ class CgroupUtils(object):
             # assigned all of the fully avaiable cores. There still may
             # be cores to assign. When use_hyperthreads is disabled, we
             # assign all the cores here.
-            corelist = sorted(cores)
-            if needed > len(corelist):
-                pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %d ncpus still needed' %
-                           (caller_name(), len(corelist) - needed))
+            if needed <= 0:
+                # we're done (will always hold if use_hyperthreads
+                # and ncpus_are_cores are both True)
+                pass
+            elif needed <= len(cores):
+                corelist = sorted(cores)
+                assigned['cpuset.cpus'] += corelist[:needed]
+            else:
+                pbs.logmsg(pbs.EVENT_DEBUG4,
+                           '%s: in final pass, '
+                           '%d more ncpus needed than available'
+                           % (caller_name(), needed - len(cores)))
                 return {}
-            assigned['cpuset.cpus'] += corelist[:needed]
+
             # Set cpuset.mems to the socketlist for now even though
             # there may not be sufficient memory. Memory gets
             # checked later in this method.
@@ -3353,8 +4428,8 @@ class CgroupUtils(object):
             nmics = int(requested['nmics'])
             # Use a list comprehension to construct the mics list
             mics = [m.group(0)
-                    for l in available['devices']
-                    for m in [regex.search(l)] if m]
+                    for d in available['devices']
+                    for m in [regex.search(d)] if m]
             if nmics > len(mics):
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'Insufficient nmics: %s/%s' %
                            (nmics, mics))
@@ -3373,8 +4448,8 @@ class CgroupUtils(object):
             ngpus = int(requested['ngpus'])
             # Use a list comprehension to construct the gpus list
             gpus = [m.group(0)
-                    for l in available['devices']
-                    for m in [regex.search(l)] if m]
+                    for d in available['devices']
+                    for m in [regex.search(d)] if m]
             if ngpus > len(gpus):
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'Insufficient ngpus: %s/%s' %
                            (ngpus, gpus))
@@ -3389,9 +4464,15 @@ class CgroupUtils(object):
             req_mem = size_as_int(requested['mem'])
             avail_mem = available['memory']
             if req_mem > avail_mem:
-                pbs.logmsg(pbs.EVENT_DEBUG4,
+                if self.cfg['vnode_per_numa_node']:
+                    # scheduler is not supposed to let this happen
+                    debug_level = pbs.EVENT_ERROR
+                else:
+                    # can happen if chunk needs to be split over sockets
+                    debug_level = pbs.EVENT_DEBUG4
+                pbs.logmsg(debug_level,
                            ('Insufficient memory on socket(s) '
-                            '%s: requested:%s, assigned:%s') %
+                            '%s: requested:%s, available:%s') %
                            (socketlist, req_mem, available['memory']))
                 return {}
             if 'mem' not in assigned:
@@ -3492,8 +4573,13 @@ class CgroupUtils(object):
                 myname = 'socket %d' % socket
                 req = requested
             pbs.logmsg(pbs.EVENT_DEBUG4, 'Current target is %s' % myname)
-            new = self._assign_resources(req, available[socket],
-                                         [socket], node)
+            new = None
+            if socket in available:
+                new = self._assign_resources(req, available[socket],
+                                             [socket], node)
+            else:
+                pbs.logmsg(pbs.EVENT_ERROR, 'Attempt to allocate resources '
+                           'on non-existing socket #' + str(socket))
             if new:
                 new['cpuset.mems'].append(socket)
                 # Add the memory-only NUMA nodes
@@ -3688,37 +4774,28 @@ class CgroupUtils(object):
             pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Failed to adjust %s: %s' %
                        (caller_name(), path, exc))
 
-    def check_no_enforcement(self, host):
-        if host in self.cfg['no_enforcement_hosts']:
-            return True
-        return False
-
     def set_limit(self, resource, value, jobid=''):
         """
         Set a cgroup limit on a node or a job
         """
-        nolimit = self.check_no_enforcement(self.hostname)
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         if jobid:
-            if ("place" in pbs.event().job.Resource_List and 'exclhost' in repr(pbs.event().job.Resource_List['place']) ):
-                nolimit = True
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s for job %s' %
                        (caller_name(), resource, value, jobid))
         else:
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s for node' %
                        (caller_name(), resource, value))
         if resource == 'mem':
-            if 'memory' in self.subsystems and not nolimit:
+            if 'memory' in self.subsystems:
                 path = self._cgroup_path('memory', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
-                self._set_slice_property('MemoryMax', str(size_as_int(value)), jobid)
         elif resource == 'softmem':
-            if 'memory' in self.subsystems and not nolimit:
+            if 'memory' in self.subsystems:
                 path = self._cgroup_path('memory', 'soft_limit_in_bytes',
                                          jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'vmem':
-            if 'memsw' in self.subsystems and not nolimit:
+            if 'memsw' in self.subsystems:
                 if 'memory' not in self.subsystems:
                     path = self._cgroup_path('memory', 'limit_in_bytes',
                                              jobid)
@@ -3726,23 +4803,56 @@ class CgroupUtils(object):
                 path = self._cgroup_path('memsw', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'hpmem':
-            if 'hugetlb' in self.subsystems and not nolimit:
+            if 'hugetlb' in self.subsystems:
                 path = self._cgroup_path('hugetlb', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'ncpus':
-            if 'cpuset' in self.subsystems:
-                path = self._cgroup_path('cpuset', 'cpus', jobid)
-                cpus = self.select_cpus(path, value)
-                if not cpus:
-                    raise CgroupLimitError('Failed to configure cpuset')
-                cpus = ",".join(list(map(str, cpus)))
-                if nolimit:
-                    self._copy_from_parent(path)
+            if 'cpu' in self.subsystems:
+                # Note the value is already multiplied by threads/core
+                # if ncpus_are_cores and use_hyperthreads are True
+                path = self._cgroup_path('cpu', 'shares', jobid)
+                weightless = False
+                # 'zero' cpu jobs have the minimum shares, but value for
+                # clamping to quota needs to be realistic
+                if (value <= 0):
+                    weightless = True
+                    weightless_shares = (self.cfg['cgroup']
+                                                 ['cpu']
+                                                 ['zero_cpus_shares_fraction'])
+                    # Note that the minimum in the kernel is 2
+                    self.write_value(
+                        path, int(max(2, weightless_shares * 1000)))
+                    value = (self.cfg['cgroup']
+                                     ['cpu']
+                                     ['zero_cpus_quota_fraction'])
                 else:
-                    self.write_value(path, cpus)
-                if jobid:
-                    path = self._cgroup_path('cpuset', 'mems', jobid)
-                    self._copy_from_parent(path)
+                    self.write_value(path, int(value * 1000))
+                if (self.cfg['cgroup']['cpu']['enforce_per_period_quota']
+                        or weightless):
+                    # zero cpu jobs ALWAYS get a quota -- keep them honest
+                    cfs_period_us = self.cfg['cgroup']['cpu']['cfs_period_us']
+                    path = self._cgroup_path('cpu', 'cfs_period_us', jobid)
+                    self.write_value(path, cfs_period_us)
+
+                    cfs_quota_fudge_factor = \
+                        self.cfg['cgroup']['cpu']['cfs_quota_fudge_factor']
+                    path = self._cgroup_path('cpu', 'cfs_quota_us', jobid)
+                    # zero cpu jobs are clamped to use less than one cpu
+                    # during each period
+                    cfs_quota_us_calculated = (cfs_period_us
+                                               * value
+                                               * cfs_quota_fudge_factor)
+
+                    # Get the parent cgroup's maximum cfs_quota_us
+                    # we cannot set the child cgroup value to anything more
+                    # Note that some kernels display "unlimited" as signed -1
+                    # So we should ignore non-positive values
+                    max_cfs_quota_us = self._get_cfs_quota_us()
+                    if ((max_cfs_quota_us is not None)
+                            and (max_cfs_quota_us > 0)
+                            and (cfs_quota_us_calculated > max_cfs_quota_us)):
+                        cfs_quota_us_calculated = max_cfs_quota_us
+                    self.write_value(path, int(cfs_quota_us_calculated))
         elif resource == 'cpuset.cpus':
             if 'cpuset' in self.subsystems:
                 path = self._cgroup_path('cpuset', 'cpus', jobid)
@@ -3750,14 +4860,14 @@ class CgroupUtils(object):
                 if not cpus:
                     raise CgroupLimitError('Failed to configure cpuset cpus')
                 cpus = ",".join(list(map(str, cpus)))
-                if nolimit:
-                    self._copy_from_parent(path)
-                else:
-                    self.write_value(path, cpus)
+                self.write_value(path, cpus)
         elif resource == 'cpuset.mems':
             if 'cpuset' in self.subsystems:
                 path = self._cgroup_path('cpuset', 'mems', jobid)
-                if self.cfg['cgroup']['cpuset']['mem_fences'] and not nolimit:
+                if not os.path.exists(path):
+                    # probably zero cpu job now in root cpuset -- do nothing
+                    return
+                if self.cfg['cgroup']['cpuset']['mem_fences']:
                     mems = value
                     if not mems:
                         raise CgroupLimitError(
@@ -3778,29 +4888,23 @@ class CgroupUtils(object):
                 pbs.logmsg(pbs.EVENT_DEBUG4,
                            'Setting devices: %s for %s' % (devices, jobid))
                 for dev in devices:
-                    self.write_value(self._cgroup_path('devices', 'allow'), dev)
                     self.write_value(path, dev)
                 path = self._cgroup_path('devices', 'list', jobid)
                 with open(path, 'r') as desc:
                     output = desc.readlines()
                 pbs.logmsg(pbs.EVENT_DEBUG4, 'devices.list: %s' % output)
-        elif resource == 'device_names':
-                device_names = value
-                for key in device_names:
-                    self._set_slice_property('DeviceAllow', '/dev/%s' % (key), jobid)
-                    pbs.logmsg(pbs.EVENT_DEBUG4, 'adding DeviceAllow=/dev/%s' % (key))
         else:
             pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Resource %s not handled' %
                        (caller_name(), resource))
 
-    def update_job_usage(self, jobid, resc_used):
+    def update_job_usage(self, jobid, resc_used, force=False):
         """
         Update resource usage for a job
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: resc_used = %s' %
                    (caller_name(), str(resc_used)))
-        if not job_is_running(jobid):
+        if not job_is_running(jobid) and not force:
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Job %s is not running' %
                        (caller_name(), jobid))
             return
@@ -3827,6 +4931,11 @@ class CgroupUtils(object):
                         pbs.logjobmsg(jobid,
                                       'Cgroup memory limit exceeded: %s' %
                                       (err_msg))
+                        if (pbs.event().type == pbs.EXECJOB_EPILOGUE
+                                and pbs.event().job.in_ms_mom()):
+                            self.write_to_stderr(pbs.event().job,
+                                                 "Cgroup mem limit "
+                                                 "exceeded: %s\n" % (err_msg))
             elif subsys == 'memsw':
                 max_vmem = self._get_max_memsw_usage(jobid)
                 if max_vmem is None:
@@ -3846,8 +4955,13 @@ class CgroupUtils(object):
                     if vmem_failcnt > 0:
                         err_msg = self._get_error_msg(jobid)
                         pbs.logjobmsg(jobid,
-                                      'Cgroup memsw limit exceeded: %s' %
+                                      'Cgroup memsw limit exceeded: %s\n' %
                                       (err_msg))
+                        if (pbs.event().type == pbs.EXECJOB_EPILOGUE
+                                and pbs.event().job.in_ms_mom()):
+                            self.write_to_stderr(pbs.event().job,
+                                                 "Cgroup memsw limit "
+                                                 "exceeded: %s" % (err_msg))
             elif subsys == 'hugetlb':
                 max_hpmem = self._get_max_hugetlb_usage(jobid)
                 if max_hpmem is None:
@@ -3863,6 +4977,11 @@ class CgroupUtils(object):
                     err_msg = self._get_error_msg(jobid)
                     pbs.logjobmsg(jobid, 'Cgroup hugetlb limit exceeded: %s' %
                                   (err_msg))
+                    if (pbs.event().type == pbs.EXECJOB_EPILOGUE
+                            and pbs.event().job.in_ms_mom()):
+                        self.write_to_stderr(pbs.event().job,
+                                             "Cgroup hugetlb limit "
+                                             "exceeded: %s" % (err_msg))
                 resc_used['hpmem'] = pbs.size(convert_size(max_hpmem, 'kb'))
                 pbs.logjobmsg(jobid, '%s: Hugepage usage: %s' %
                               (caller_name(), resc_used['hpmem']))
@@ -3883,10 +5002,10 @@ class CgroupUtils(object):
                         cput = 0
                 # Calculate cpupercent based on the reported values
                 if walltime > 0:
-                    cpupercent = 100 * cput / walltime
+                    cpupercent = (100.0 * cput) / walltime
                 else:
                     cpupercent = 0
-                resc_used['cpupercent'] = pbs.pbs_int(cpupercent)
+                resc_used['cpupercent'] = pbs.pbs_int(int(cpupercent))
                 pbs.logjobmsg(jobid, '%s: CPU percent: %d' %
                               (caller_name(), cpupercent))
                 # Now update cput
@@ -3905,13 +5024,8 @@ class CgroupUtils(object):
         Creates the cgroup if it doesn't exists
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
-        # Create a systemd slice for the job
-        self._create_slice(jobid)
         # Iterate over the enabled subsystems
         for subsys in self.subsystems:
-            if subsys == 'systemd':
-                # The _create_slice method already created a directory
-                continue
             # Create a directory for the job
             old_umask = os.umask(0o022)
             try:
@@ -3934,75 +5048,118 @@ class CgroupUtils(object):
             finally:
                 os.umask(old_umask)
 
-    def configure_job(self, jobid, hostresc, node, cgroup, event_type):
+    def configure_job(self, job, hostresc, node, cgroup, event_type):
         """
         Determine the cgroup limits and configure the cgroups
         """
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
+        jobid = job.id
+
+        # Get available totals for mem, vmem and hpmem from parent cgroup
+        # Calling node.get_memory_on_node etc. may give slightly different
+        # results if kernel drivers have freshly reserved memory since
+        # exechost_startup was called
+        mem_avail = 0
+        filename = self._cgroup_path('memory', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                mem_avail = int(desc.readline())
+        vmem_avail = 0
+        filename = self._cgroup_path('memsw', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                vmem_avail = int(desc.readline())
+        hpmem_avail = 0
+        filename = self._cgroup_path('hugetlb', 'limit_in_bytes')
+        if filename and os.path.isfile(filename):
+            with open(filename) as desc:
+                hpmem_avail = int(desc.readline())
+
+        # Sanity check vmem_avail >= mem_avail
+        # -- unnecessary by construction in exechost_startup
+        # but memsw may be disabled or swap accounting disabled
+        if vmem_avail < mem_avail:
+            vmem_avail = mem_avail
+
+        pbs.logmsg(pbs.EVENT_DEBUG4, "configure_job:"
+                   " total host avail mem=%s vmem=%s hpmem=%s"
+                   % (mem_avail, vmem_avail, hpmem_avail))
+
         mem_enabled = 'memory' in self.subsystems
         vmem_enabled = 'memsw' in self.subsystems
         if mem_enabled or vmem_enabled:
             # Initialize mem variables
-            mem_avail = node.get_memory_on_node()
-            pbs.logmsg(pbs.EVENT_DEBUG4, 'mem_avail %s' % mem_avail)
             mem_requested = None
             if 'mem' in hostresc:
                 mem_requested = convert_size(hostresc['mem'], 'kb')
             mem_default = None
-            if mem_enabled:
-                mem_default = self.default('memory')
+            if mem_enabled and self.default('memory') is not None:
+                mem_default = size_as_int(self.default('memory'))
             # Initialize vmem variables
-            vmem_avail = node.get_vmem_on_node()
-            pbs.logmsg(pbs.EVENT_DEBUG4, 'vmem_avail %s' % vmem_avail)
             vmem_requested = None
             if 'vmem' in hostresc:
                 vmem_requested = convert_size(hostresc['vmem'], 'kb')
-            vmem_default = None
-            if vmem_enabled:
-                vmem_default = self.default('memsw')
+            vmem_default = 0
+            if (vmem_enabled and (self.default('memsw') is not None)
+                    and (vmem_avail > mem_avail)):
+                vmem_default = size_as_int(self.default('memsw'))
+                if vmem_default > (vmem_avail - mem_avail):
+                    vmem_default = vmem_avail - mem_avail
             # Initialize softmem variables
             if 'soft_limit' in self.cfg['cgroup']['memory']:
                 softmem_enabled = self.cfg['cgroup']['memory']['soft_limit']
             else:
                 softmem_enabled = False
-            # Sanity check
-            if size_as_int(mem_avail) > size_as_int(vmem_avail):
-                pbs.logmsg(pbs.EVENT_SYSTEM,
-                           '%s: WARNING: mem_avail > vmem_avail' %
-                           caller_name())
-                pbs.logmsg(pbs.EVENT_SYSTEM,
-                           '%s: Check reserve_amount and reserve_percent' %
-                           caller_name())
-                # Increase vmem_avail to match mem_avail
-                vmem_avail = mem_avail
             # Determine the mem limit
             if mem_requested is not None:
                 # mem requested may not exceed available
-                if size_as_int(mem_requested) > size_as_int(mem_avail):
+                if size_as_int(mem_requested) > mem_avail:
                     raise JobValueError(
                         'mem requested (%s) exceeds mem available (%s)' %
-                        (mem_requested, mem_avail))
+                        (mem_requested, str(mem_avail)))
                 mem_limit = mem_requested
             else:
                 # mem was not requested
-                if mem_default is None:
-                    mem_limit = mem_avail
+                if (mem_default is None
+                        or not self.cfg['cgroup']['memory']
+                                       ['enforce_default']
+                        or (self.cfg['cgroup']['memory']
+                                    ['exclhost_ignore_default']
+                            and "place" in job.Resource_List
+                            and 'exclhost'
+                                in repr(job.Resource_List['place']))):
+                    mem_limit = str(mem_avail)
                 else:
-                    mem_limit = mem_default
+                    mem_limit = str(mem_default)
             # Determine the vmem limit
-            if vmem_requested is not None:
+            if not vmem_enabled:
+                # set as equal, but will not be used to set cgroup limit
+                vmem_limit = mem_limit
+            elif vmem_requested is not None:
                 # vmem requested may not exceed available
-                if size_as_int(vmem_requested) > size_as_int(vmem_avail):
+                if size_as_int(vmem_requested) > vmem_avail:
                     raise JobValueError(
                         'vmem requested (%s) exceeds vmem available (%s)' %
-                        (vmem_requested, vmem_avail))
+                        (vmem_requested, str(vmem_avail)))
                 vmem_limit = vmem_requested
             else:
                 # vmem was not requested
-                if vmem_default is None:
-                    vmem_limit = vmem_avail
+                if (vmem_default is None
+                        or not self.cfg['cgroup']['memsw']
+                                       ['enforce_default']
+                        or (self.cfg['cgroup']['memsw']
+                                    ['exclhost_ignore_default']
+                            and 'place' in job.Resource_List
+                            and 'exclhost'
+                                in repr(job.Resource_List['place']))):
+                    vmem_limit = str(vmem_avail)
                 else:
-                    vmem_limit = vmem_default
+                    vmem_limit = str(min(vmem_avail,
+                                         size_as_int(mem_limit)
+                                         + vmem_default))
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       "Limits computed from requests/defaults: "
+                       "mem: %s vmem: %s" % (mem_limit, vmem_limit))
             # Ensure vmem is at least as large as mem
             if size_as_int(vmem_limit) < size_as_int(mem_limit):
                 vmem_limit = mem_limit
@@ -4011,34 +5168,39 @@ class CgroupUtils(object):
                 softmem_limit = mem_limit
                 # The hard memory limit is assigned the lesser of the vmem
                 # limit and available memory
-                if size_as_int(vmem_limit) < size_as_int(mem_avail):
+                if size_as_int(vmem_limit) < mem_avail:
                     mem_limit = vmem_limit
                 else:
-                    mem_limit = mem_avail
+                    mem_limit = str(mem_avail)
             # Again, ensure vmem is at least as large as mem
             if size_as_int(vmem_limit) < size_as_int(mem_limit):
                 vmem_limit = mem_limit
             # Sanity checks when both memory and memsw are enabled
             if mem_enabled and vmem_enabled:
                 if vmem_requested is not None:
-                    if size_as_int(vmem_limit) > size_as_int(vmem_requested):
+                    if size_as_int(vmem_requested) < size_as_int(vmem_limit):
                         # The user requested an invalid limit
                         raise JobValueError(
-                            'vmem limit (%s) exceeds vmem requested (%s)' %
-                            (vmem_limit, vmem_requested))
+                            'vmem requested (%s) under minimum possible (%s)'
+                            % (vmem_requested, vmem_limit))
                 if size_as_int(vmem_limit) > size_as_int(mem_limit):
-                    # This job may utilize swap
-                    if size_as_int(vmem_avail) <= size_as_int(mem_avail):
+                    # This job may try to utilize swap
+                    if vmem_avail <= mem_avail:
                         # No swap available
-                        raise CgroupLimitError('Job might utilize swap '
-                                               'and no swap space available')
+                        if vmem_requested is not None:
+                            raise CgroupLimitError('Job might utilize swap'
+                                                   ' and no swap on host')
+                        else:
+                            # It got an impossible vmem>mem
+                            # undo that since there is no swap
+                            vmem_limit = mem_limit
             # Assign mem and vmem
             if mem_enabled:
                 if mem_requested is None:
                     pbs.logmsg(pbs.EVENT_DEBUG2,
                                '%s: mem not requested, '
-                               'assigning %s to cgroup' %
-                               (caller_name(), mem_limit))
+                               'assigning %s to cgroup'
+                               % (caller_name(), mem_limit))
                     hostresc['mem'] = pbs.size(mem_limit)
                 if softmem_enabled:
                     hostresc['softmem'] = pbs.size(softmem_limit)
@@ -4046,8 +5208,8 @@ class CgroupUtils(object):
                 if vmem_requested is None:
                     pbs.logmsg(pbs.EVENT_DEBUG2,
                                '%s: vmem not requested, '
-                               'assigning %s to cgroup' %
-                               (caller_name(), vmem_limit))
+                               'assigning %s to cgroup'
+                               % (caller_name(), vmem_limit))
                     pbs.logmsg(pbs.EVENT_DEBUG4,
                                '%s: INFO: vmem is enabled in the hook '
                                'configuration file and should also be '
@@ -4055,31 +5217,39 @@ class CgroupUtils(object):
                                'scheduler configuration file' %
                                caller_name())
                     hostresc['vmem'] = pbs.size(vmem_limit)
+
         # Initialize hpmem variables
+        hpmem_default = None
+        hpmem_limit = None
         hpmem_enabled = 'hugetlb' in self.subsystems
         if hpmem_enabled:
-            hpmem_avail = node.get_hpmem_on_node()
-            hpmem_limit = None
-            hpmem_default = self.default('hugetlb')
-            if hpmem_default is None:
+            if self.default('hugetlb') is not None:
+                hpmem_default = size_as_int(self.default('hugetlb'))
+            if (hpmem_default is None
+                    or not self.cfg['cgroup']['hugetlb']
+                                   ['enforce_default']
+                    or (self.cfg['cgroup']['hugetlb']
+                                ['exclhost_ignore_default']
+                        and "place" in job.Resource_List
+                        and 'exclhost' in repr(job.Resource_List['place']))):
                 hpmem_default = hpmem_avail
             if 'hpmem' in hostresc:
                 hpmem_limit = convert_size(hostresc['hpmem'], 'kb')
             else:
-                hpmem_limit = hpmem_default
+                hpmem_limit = str(hpmem_default)
             # Assign hpmem
-            if size_as_int(hpmem_limit) > size_as_int(hpmem_avail):
+            if size_as_int(hpmem_limit) > hpmem_avail:
                 raise JobValueError('hpmem limit (%s) exceeds available (%s)' %
-                                    (hpmem_limit, hpmem_avail))
+                                    (hpmem_limit, str(hpmem_avail)))
             hostresc['hpmem'] = pbs.size(hpmem_limit)
         # Initialize cpuset variables
         cpuset_enabled = 'cpuset' in self.subsystems
         if cpuset_enabled:
-            cpu_limit = 1
+            cpu_limit = 0
             if 'ncpus' in hostresc:
                 cpu_limit = hostresc['ncpus']
-            if cpu_limit < 1:
-                cpu_limit = 1
+            # support weightless jobs in root cpuset
+            # do not clamp cpu_limit to min 1
             hostresc['ncpus'] = pbs.pbs_int(cpu_limit)
         # Find the available resources and assign the right ones to the job
         assigned = dict()
@@ -4087,7 +5257,8 @@ class CgroupUtils(object):
         # Make two attempts since self.cleanup_orphans may actually fix the
         # problem we see in a first attempt
         for attempt in range(2):
-            if event_type == pbs.EXECJOB_RESIZE:
+            if (hasattr(pbs, "EXECJOB_RESIZE")
+                    and event_type == pbs.EXECJOB_RESIZE):
                 # consider current job's resources as being available,
                 # where a subset of them would be re-assigned to the
                 # the same job.
@@ -4113,7 +5284,7 @@ class CgroupUtils(object):
                 except Exception:
                     jobdict = dict()
                     pbs.logmsg(pbs.EVENT_DEBUG2,
-                               '%s: Failed to resyncing local job data' %
+                               '%s: Failed to gather local job data' %
                                caller_name())
                 # There may not be a .JB file present for this job yet
                 if jobid not in jobdict:
@@ -4141,9 +5312,8 @@ class CgroupUtils(object):
                    'Assigned resources: %s' % (assigned))
         self.assigned_resources = assigned
         if cpuset_enabled:
-            # Remove the ncpus key if it exists. Ignore any KeyError.
-            if 'ncpus' in hostresc:
-                del hostresc['ncpus']
+            # Do not remove the ncpus key if it exists:
+            # used by the "cpu" controller now.
             for key in ['cpuset.cpus', 'cpuset.mems']:
                 if key in assigned:
                     hostresc[key] = assigned[key]
@@ -4158,24 +5328,54 @@ class CgroupUtils(object):
             else:
                 pbs.logmsg(pbs.EVENT_DEBUG2,
                            'Key: %s not found in assigned' % key)
-        # Initialize devices variables
-        key = 'device_names'
-        if 'devices' in self.subsystems:
-            if key in assigned:
-                hostresc[key] = assigned[key]
-            else:
-                pbs.logmsg(pbs.EVENT_DEBUG2,
-                           'Key: %s not found in assigned' % key)
         # Apply the resource limits to the cgroups
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Setting cgroup limits for: %s' %
                    (caller_name(), hostresc))
         # The vmem limit must be set after the mem limit, so sort the keys
-        resorder = sorted(hostresc)
-        resorder.append('devices')
-        resorder.remove('devices')
-        for resc in resorder:
-            self.set_limit(resc, hostresc[resc], jobid)
+        # also ensures we get to cpuset.cpus before cpuset.mem
+        # important for zero cpu jobs migrated to root cpuset
+        for resc in sorted(hostresc):
+            if resc == 'ncpus':
+                # In case of HT, may need to multiply the ncpus;
+                # done here since "node" is not passed down to set_limit
+                # This only sets the cpu controller limits/shares,
+                # since the cpuset stuff is done through
+                # cpuset.cpus and cpuset.mems
+                # Note the set_limit in the final 'else' should be
+                # skipped -- its replacement is at the end here
+                htpc = 1
+                if (self.cfg['cgroup']['cpu']['enabled']
+                        and self.cfg['use_hyperthreads']
+                        and self.cfg['ncpus_are_cores']):
+                    if 'hyperthreads_per_core' in node.cpuinfo:
+                        htpc = node.cpuinfo['hyperthreads_per_core']
+                self.set_limit(resc, hostresc[resc] * htpc, jobid)
+            elif ((resc == "cpuset.cpus")
+                  and not hostresc['cpuset.cpus']):
+                # zero cpus jobs -- delete the cpuset made for the job;
+                # later allows job processes to be placed in the root cpuset.
+                # Note the set_limit in the final else should likewise
+                # be skipped.
+                # Since the advent of "resize" we may need to
+                # clean up processes in a pre-existing cpuset
+                finished = False
+                giveup_time = time.time() + self.cfg['kill_timeout']
+                path = self._cgroup_path('cpuset', '', jobid)
+                while not finished:
+                    success = self._remove_cgroup(path)
+                    if success:
+                        finished = True
+                    elif time.time() > giveup_time:
+                        finished = True
+                    else:
+                        time.sleep(0.2)
+            else:
+                # For all the rest just pass hostresc[resc] down to set_limit
+                self.set_limit(resc, hostresc[resc], jobid)
         # Set additional parameters
+        # Note some kernels will surprisingly not let you set things
+        # to the value that is already there in some corner cases
+        # hence some of the reads to see "if we need to write"
         if cpuset_enabled:
             path = self._cgroup_path('cpuset', 'mem_hardwall', jobid)
             lines = self.read_value(path)
@@ -4288,7 +5488,7 @@ class CgroupUtils(object):
         if not jobid:
             parent = path
         else:
-            parent = os.path.join(path, self._jobid_to_systemd_subdir(jobid))
+            parent = os.path.join(path, jobid)
         # Recursively delete children
         self._delete_cgroup_children(parent)
         # Delete the parent
@@ -4320,8 +5520,6 @@ class CgroupUtils(object):
                 if not os.path.isdir(parent):
                     break
                 time.sleep(0.5)
-            # Delete the systemd slice for the job
-            self._delete_slice(jobid)
             return True
         if not os.path.isdir(parent):
             return True
@@ -4366,21 +5564,26 @@ class CgroupUtils(object):
         self.cleanup_hook_data(local_jobs)
         self.cleanup_env_files(local_jobs)
         remaining = 0
-        for key in self.paths:
+        # Always do systemd first, to prevent it from re-"mirroring"
+        # that directory into other hierarchies behind our back
+        if 'systemd' in self.paths:
+            keys_to_process = \
+                (['systemd']
+                 + [x for x in self.paths if x != 'systemd'])
+        else:
+            keys_to_process = [x for x in self.paths]
+        for key in keys_to_process:
             path = os.path.dirname(self._cgroup_path(key))
             # Identify any orphans and append an orphan suffix
-            pattern = self._systemd_subdir_wildcard()
+            pattern = self._glob_subdir_wildcard()
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Searching for orphans: %s' %
                        (caller_name(), os.path.join(path, pattern)))
             for subdir in glob.glob(os.path.join(path, pattern)):
-                jobid = self._systemd_subdir_to_jobid(os.path.basename(subdir))
+                jobid = os.path.basename(subdir)
                 if jobid in local_jobs or jobid.endswith('.orphan'):
                     continue
-                # Delete the systemd slice before we rename the directory
-                self._delete_slice(jobid)
-                # Now rename the directory. The _jobid_to_systemd_subdir()
-                # method will append the .slice extension.
-                filename = self._jobid_to_systemd_subdir(jobid + '.orphan')
+                # Now rename the directory.
+                filename = jobid + '.orphan'
                 new_subdir = os.path.join(path, filename)
                 pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Renaming %s to %s' %
                            (caller_name(), subdir, new_subdir))
@@ -4394,7 +5597,7 @@ class CgroupUtils(object):
                                    '%s: Failed to rename %s to %s' %
                                    (caller_name(), subdir, new_subdir))
             # Attempt to remove the orphans
-            pattern = self._systemd_subdir_wildcard(extension='orphan.slice')
+            pattern = self._glob_subdir_wildcard(extension='orphan')
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Cleaning up orphans: %s' %
                        (caller_name(), os.path.join(path, pattern)))
             for subdir in glob.glob(os.path.join(path, pattern)):
@@ -4418,38 +5621,61 @@ class CgroupUtils(object):
         if not jobid:
             raise ValueError('Invalid job ID')
         finished = False
+        giveup_time = time.time() + self.cfg['kill_timeout']
         try:
-            with Timeout(self.cfg['kill_timeout'],
-                         'Timed out deleting cgroup for job: %s' % jobid):
-                self._delete_slice(jobid)
-                for key in self.paths:
+            while not finished:
+                failure = False
+                # Always do systemd first
+                if 'systemd' in self.paths:
+                    keys_to_process = \
+                        (['systemd']
+                         + [x for x in self.paths if x != 'systemd'])
+                else:
+                    keys_to_process = [x for x in self.paths]
+                for key in keys_to_process:
                     cgroup_path = self._cgroup_path(key)
                     path = os.path.dirname(self._cgroup_path(key))
-                    pattern = self._systemd_subdir_wildcard()
-                    for subdir in glob.glob(os.path.join(path, pattern)):
-                        # Make sure it matches exactly
-                        dname = os.path.basename(subdir)
-                        subdir_jobid = self._systemd_subdir_to_jobid(dname)
-                        subdir_parent = os.path.dirname(subdir)
-                        if subdir_jobid != jobid:
-                            continue
-                        # Make sure it still exists
-                        if not os.path.isdir(subdir):
-                            continue
-                        # Remove it
-                        if not self._remove_cgroup(subdir_parent, jobid):
-                            pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Unable to '
-                                       'delete cgroup for job %s' %
-                                       (caller_name(), jobid))
-            finished = True
-        except TimeoutError:
-            pbs.logmsg(pbs.EVENT_DEBUG, '%s: Timed out removing cgroup '
-                       'for %s' % (caller_name(), jobid))
+                    subdir_basename = jobid
+                    subdir = os.path.join(path, subdir_basename)
+                    subdir_parent = path
+                    # Make sure it still exists
+                    if not os.path.isdir(subdir):
+                        pbs.logmsg(pbs.EVENT_DEBUG4,
+                                   '%s: Skipping because %s is gone' %
+                                   (caller_name(), subdir))
+                        continue
+                    # Remove it
+                    pbs.logmsg(pbs.EVENT_DEBUG4,
+                               '%s: Attempting to delete %s' %
+                               (caller_name(), subdir))
+                    if not self._remove_cgroup(subdir_parent, jobid):
+                        pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Unable to '
+                                   'delete cgroup for job %s' %
+                                   (caller_name(), jobid))
+                    # Check again
+                    if os.path.isdir(subdir):
+                        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Deletion '
+                                   'failed: %s still exists' %
+                                   (caller_name(), subdir))
+                        failure = True
+                    else:
+                        pbs.logmsg(pbs.EVENT_DEBUG4,
+                                   '%s: Deleted %s' %
+                                   (caller_name(), subdir))
+                if not failure:
+                    finished = True
+                elif time.time() > giveup_time:
+                    finished = True
+                else:
+                    time.sleep(0.2)
         except Exception as exc:
+            failure = True
             pbs.logmsg(pbs.EVENT_DEBUG, '%s: Error removing cgroup '
                        'for %s: %s' % (caller_name(), jobid, exc))
-        if finished:
+
+        if finished and not failure:
             return True
+
         # Handle deletion failure
         if not offline_node:
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Offline not requested' %
@@ -4513,6 +5739,16 @@ class CgroupUtils(object):
         except Exception:
             raise
 
+    def _get_cfs_quota_us(self, jobid=''):
+        pbs.logmsg(pbs.EVENT_DEBUG3, "%s: Method called" % (caller_name()))
+        # default for _cgroup_path for parent is empty string
+        try:
+            with open(self._cgroup_path('cpu', 'cfs_quota_us',
+                                        jobid), 'r') as fd:
+                return int(fd.readline().strip())
+        except Exception:
+            return None
+
     def _get_mem_failcnt(self, jobid):
         """
         Return memory failcount
@@ -4557,14 +5793,7 @@ class CgroupUtils(object):
         try:
             with open(self._cgroup_path('memory', 'max_usage_in_bytes',
                                         jobid), 'r') as desc:
-                max = int(desc.readline().strip())
-            with open(self._cgroup_path('memory', 'limit_in_bytes',
-                                        jobid), 'r') as desc:
-                limit = int(desc.readline().strip())
-            if (max > limit):
-                return limit
-            else:
-                return max
+                return int(desc.readline().strip())
         except Exception:
             return None
 
@@ -4576,14 +5805,7 @@ class CgroupUtils(object):
         try:
             with open(self._cgroup_path('memsw', 'max_usage_in_bytes', jobid),
                       'r') as desc:
-                max = int(desc.readline().strip())
-            with open(self._cgroup_path('memsw', 'limit_in_bytes', jobid),
-                      'r') as desc:
-                limit = int(desc.readline().strip())
-            if (max > limit):
-                return limit
-            else:
-                return max
+                return int(desc.readline().strip())
         except Exception:
             return None
 
@@ -4629,7 +5851,7 @@ class CgroupUtils(object):
         with open(os.path.join(parent, cpufile), 'r') as desc:
             avail = expand_list(desc.read().strip())
         if len(avail) < 1:
-            raise CgroupProcessingError('No CPUs avaialble in cgroup')
+            raise CgroupProcessingError('No CPUs available in cgroup')
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Available CPUs: %s' %
                    (caller_name(), avail))
         for filename in glob.glob(os.path.join(parent, '[0-9]*', cpufile)):
@@ -4654,13 +5876,17 @@ class CgroupUtils(object):
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         try:
             proc = subprocess.Popen(['dmesg'], shell=False,
-                                    stdout=subprocess.PIPE)
-            out = proc.communicate()[0].decode('utf-8').splitlines()
+                                    stdout=subprocess.PIPE,
+                                    universal_newlines=True)
+            out = proc.communicate()[0]
+            # if we get a non-str type then convert before calling splitlines
+            # should not happen since we pass universal_newlines True
+            out_split = stringified_output(out).splitlines()
         except Exception:
             return ''
-        out.reverse()
+        out_split.reverse()
         # Check to see if the job id is found in dmesg output
-        for line in out:
+        for line in out_split:
             start = line.find('Killed process ')
             if start < 0:
                 start = line.find('Task in /%s' % self.cfg['cgroup_prefix'])
@@ -4671,6 +5897,16 @@ class CgroupUtils(object):
             if job_start < 0:
                 continue
             return kill_line
+
+        # Found nothing -- more recent kernels have different messages
+        for line in out_split:
+            start = line.find('oom-kill')
+            kill_line = line[start:]
+            job_start = line.find(jobid)
+            if job_start < 0:
+                continue
+            return kill_line
+
         return ''
 
     def write_job_env_file(self, jobid, env_list):
@@ -4747,6 +5983,10 @@ class CgroupUtils(object):
         try:
             with open(self.cgroup_jobs_file, 'r+') as fd:
                 jobdict = eval(fd.read())
+                if not isinstance(jobdict, dict):
+                    pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted '
+                               'cgroup_jobs; emptying it first')
+                    jobdict = dict()
                 if jobid not in jobdict:
                     jobdict[jobid] = time.time()
                     fd.seek(0)
@@ -4754,6 +5994,17 @@ class CgroupUtils(object):
         except IOError:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Failed to open cgroup_jobs file')
             raise
+        except SyntaxError:
+            pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted cgroup_jobs; '
+                                        'emptying it first')
+            jobdict = dict()
+            jobdict[jobid] = time.time()
+            try:
+                with open(self.cgroup_jobs_file, 'w') as fd:
+                    fd.write(str(jobdict))
+            except Exception:
+                pbs.logsmg('Error adding jobid %s to cgroup_jobs' % jobid)
+                self.empty_cgroup_jobs_file()
 
     def remove_jobid_from_cgroup_jobs(self, jobid):
         """
@@ -4789,11 +6040,30 @@ class CgroupUtils(object):
         try:
             with open(self.cgroup_jobs_file, 'r') as fd:
                 jobdict = eval(fd.read())
+                if not isinstance(jobdict, dict):
+                    pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted '
+                               'cgroup_jobs; emptying it')
+                    jobdict = dict()
+                    self.empty_cgroup_jobs_file()
         except IOError:
             pbs.logmsg(pbs.EVENT_DEBUG, 'Failed to open cgroup_jobs file')
             raise
+        except SyntaxError:
+            pbs.logmsg(pbs.EVENT_ERROR, 'Incompatibly formatted cgroup_jobs; '
+                                        'emptying it')
+            self.empty_cgroup_jobs_file()
+            jobdict = dict()
         cutoff = time.time() - float(self.cfg['job_setup_timeout'])
-        return {key: val for key, val in jobdict.items() if val >= cutoff}
+        result = {key: val for key, val in jobdict.items() if val >= cutoff}
+        if len(result) != len(jobdict):
+            pbs.logmsg(pbs.EVENT_DEBUG, 'Removing stale jobs from cgroup_jobs')
+            try:
+                with open(self.cgroup_jobs_file, 'w') as fd:
+                    fd.write(str(result))
+            except Exception:
+                # we tolerate even bad files
+                pass
+        return result
 
     def delete_cgroup_jobs_file(self, jobid):
         """
@@ -4880,6 +6150,184 @@ def set_global_vars():
         raise CgroupConfigError('Unable to determine PBS_MOM_HOME')
 
 
+def missing_str(memspecs):
+    if 'vmem' in memspecs and 'mem' in memspecs:
+        try:
+            if size_as_int(memspecs['vmem']) > 0:
+                vmem_size = pbs.size(memspecs['vmem'])
+            else:
+                vmem_size = pbs.size("0B")
+            if size_as_int(memspecs['mem']) > 0:
+                mem_size = pbs.size(memspecs['mem'])
+            else:
+                mem_size = pbs.size("0B")
+            if mem_size > vmem_size:
+                event.reject("invalid specification: vmem>mem")
+            elif mem_size == vmem_size:
+                # Avoid creating a "0mb" pbs.size
+                return("cgswap=0B")
+            else:
+                cgswap_size = vmem_size - mem_size
+                return ("cgswap="
+                        + str(cgswap_size))
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       str(traceback.format_exc().strip().splitlines()))
+            event.reject("Invalid (v)mem size requested")
+
+    if 'mem' in memspecs and 'cgswap' in memspecs:
+        try:
+            if size_as_int(memspecs['mem']) > 0:
+                mem_size = pbs.size(memspecs['mem'])
+            else:
+                mem_size = pbs.size("0B")
+            if size_as_int(memspecs['cgswap']) > 0:
+                cgswap_size = pbs.size(memspecs['cgswap'])
+                vmem_size = mem_size + cgswap_size
+            else:
+                vmem_size = mem_size
+            return ("vmem="
+                    + str(vmem_size))
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       str(traceback.format_exc().strip().splitlines()))
+            event.reject("Invalid mem or cgswap size requested")
+
+    if 'vmem' in memspecs and 'cgswap' in memspecs:
+        try:
+            if size_as_int(memspecs['vmem']) > 0:
+                vmem_size = pbs.size(memspecs['vmem'])
+            else:
+                vmem_size = pbs.size("0B")
+            # Woraround for bug: no arithmetic on zero pbs.size
+            # since user may have specified e.g. "0mb" cgswap
+            if size_as_int(memspecs['cgswap']) == 0:
+                mem_size = vmem_size
+                return ("mem=" + str(mem_size))
+            else:
+                cgswap_size = pbs.size(memspecs['cgswap'])
+                if cgswap_size >= vmem_size:
+                    event.reject("invalid specification: mem<=0")
+                else:
+                    mem_size = vmem_size - cgswap_size
+                    return ("mem=" + str(mem_size))
+        except Exception:
+            pbs.logmsg(pbs.EVENT_DEBUG4,
+                       str(traceback.format_exc().strip().splitlines()))
+            event.reject("Invalid (v)mem size requested")
+    return ""
+
+
+def fill_cgswap():
+    selspec = None
+    event = pbs.event()
+
+    job = event.job
+    job_o = None
+    if event.type == pbs.MODIFYJOB:
+        job_o = event.job_o
+
+    if (hasattr(job, 'Resource_List') and 'select' in job.Resource_List
+            and job.Resource_List.select):
+        # either a submission using -lselect or a qalter specifying -lselect
+        selspec = repr(job.Resource_List["select"])
+        pbs.logmsg(pbs.EVENT_DEBUG3, "fill_cgswap: original selspec is: %s"
+                   % selspec)
+        newspec = []
+        for chunkspec in selspec.split('+'):
+            chunkspec_split = chunkspec.split(':')
+            try:
+                chunkspec_quantity = int(chunkspec_split[0])
+            except Exception:
+                event.reject("Invalid number of chunks in -lselect")
+            newchunk = chunkspec
+            if len(chunkspec_split) == 1:
+                newspec.append(newchunk)
+            else:
+                # more than just a number of chunks
+                # -- get resources specified
+                memspecs = {}
+                for t in chunkspec_split[1:]:
+                    if t.startswith('mem='):
+                        memstr = t.split('=')[1]
+                        memspecs['mem'] = memstr
+                    if t.startswith('vmem='):
+                        vmemstr = t.split('=')[1]
+                        memspecs['vmem'] = vmemstr
+                    if t.startswith('cgswap='):
+                        cgswapstr = t.split('=')[1]
+                        memspecs['cgswap'] = cgswapstr
+                if len(memspecs) > 2:
+                    event.reject("chunk specification overconstrained, "
+                                 "specify only 2 of mem/vmem/cgswap")
+                elif len(memspecs) == 2:
+                    to_add = missing_str(memspecs)
+                    if to_add:
+                        newchunk += ":" + to_add
+                    newspec.append(newchunk)
+                else:
+                    newspec.append(newchunk)
+        newselspec = '+'.join(newspec)
+        pbs.logmsg(pbs.EVENT_DEBUG3, "fill_cgswap: old selspec was: %s, "
+                   "new selspec is %s"
+                   % (selspec, newselspec))
+        job.Resource_List['select'] = pbs.select(newselspec)
+        # need to remove possibly stale "global" cgswap
+        # if there is a select now but if the job was originally submitted
+        # with "old style" per-job resources, as cgswap chunk values are
+        # not summed into Resource_List as for vmem and mem
+        try:
+            job.Resource_List['cgswap'] = None
+        except Exception:
+            pass
+    else:
+        # Old style submission without -lselect
+        # We set 'global' per-job resources; will fail (by design)
+        # if original submission used -lselect.
+        to_add = None
+        memspecs_o = {}
+        memspecs_n = {}
+        memspecs = {}
+        for res in ['vmem', 'mem', 'cgswap']:
+            if (hasattr(job_o, 'Resource_List')
+                    and res in job_o.Resource_List
+                    and job_o.Resource_List[res] is not None):
+                memspecs_o[res] = job_o.Resource_List[res]
+            if (hasattr(job, 'Resource_List')
+                    and res in job.Resource_List
+                    and job.Resource_List[res] is not None):
+                memspecs_n[res] = job.Resource_List[res]
+        memspecs = {**memspecs_o, **memspecs_n}
+        pbs.logmsg(pbs.EVENT_DEBUG3, "memspecs read is: %s"
+                   % str(memspecs))
+
+        if len(memspecs) == 3:
+            # overconstrained -- we have 3 values for mem, vmem and cgswap
+            if (event.type == pbs.QUEUEJOB or len(memspecs_n) > 2):
+                event.reject("chunk specification overconstrained, "
+                             "specify only 2 of mem/vmem/cgswap")
+            else:
+                # modifyjob -- values in the new dictionary are controlling
+                if len(memspecs_n) == 2:
+                    # the two new values determine the third
+                    to_add = missing_str(memspecs_n)
+                elif len(memspecs_n) == 1:
+                    # specified one new value in qalter
+                    # -- pick which old one to keep
+                    # if new value is cgswap, keep old mem and recompute vmem
+                    # if new value is vmem, keep old mem and recompute cgswap
+                    # if new value is mem, keep old vmem and recompute cgswap
+                    if 'cgswap' in memspecs_n:
+                        del memspecs['vmem']
+                    else:
+                        del memspecs['cgswap']
+        if len(memspecs) == 2 and not to_add:
+            to_add = missing_str(memspecs)
+        if to_add:
+            to_add_split = to_add.split('=')
+            job.Resource_List[to_add_split[0]] = pbs.size(to_add_split[1])
+
+
 #
 # FUNCTION main
 #
@@ -4896,6 +6344,11 @@ def main():
     event = pbs.event()
     pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Hook name is %s' %
                (caller_name(), event.hook_name))
+
+    if event.type in [pbs.MODIFYJOB, pbs.QUEUEJOB]:
+        fill_cgswap()
+        event.accept()
+
     try:
         set_global_vars()
     except Exception:
@@ -4908,6 +6361,8 @@ def main():
     # Instantiate the hook utility class
     try:
         hooks = HookUtils()
+        pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Hook utility class instantiated' %
+                   caller_name())
     except Exception:
         pbs.logmsg(pbs.EVENT_DEBUG,
                    '%s: Failed to instantiate hook utility class' %
@@ -4915,10 +6370,6 @@ def main():
         pbs.logmsg(pbs.EVENT_DEBUG,
                    str(traceback.format_exc().strip().splitlines()))
         event.accept()
-    pbs.logmsg(pbs.EVENT_DEBUG, '%s hook handling %s event' %
-               (event.hook_name, hooks.event_name(event.type)))
-    pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Hook utility class instantiated' %
-               caller_name())
     # Bail out if there is no handler for this event
     if not hooks.hashandler(event.type):
         pbs.logmsg(pbs.EVENT_DEBUG, '%s: %s event not handled by this hook' %
@@ -4943,15 +6394,33 @@ def main():
             if hostname in event.vnode_list:
                 vnode = event.vnode_list[hostname]
         with Lock(cfg['cgroup_lock_file']):
+            # Only write this once we grabbed the lock,
+            # otherwise *another* event could actually win the lock
+            # even though *this* event printed this message last,
+            # and we'd be confused about the event that the winner services
+            if event.type == pbs.EXECHOST_PERIODIC:
+                loglevel = pbs.EVENT_DEBUG3
+            else:
+                loglevel = pbs.EVENT_DEBUG2
+            if hasattr(event, 'job') and hasattr(event.job, 'id'):
+                pbs.logmsg(loglevel, '%s: Event type is %s, job ID is %s'
+                           % (caller_name(), hooks.event_name(event.type),
+                              event.job.id))
+            else:
+                pbs.logmsg(loglevel, '%s: Event type is %s'
+                           % (caller_name(), hooks.event_name(event.type)))
+
             cgroup = CgroupUtils(hostname, vnode, cfg=cfg)
             pbs.logmsg(pbs.EVENT_DEBUG4,
                        '%s: Cgroup utility class instantiated' % caller_name())
+
             # Bail out if there is nothing to do
             if not cgroup.subsystems:
                 pbs.logmsg(pbs.EVENT_DEBUG,
                            '%s: Cgroups disabled or none to manage' %
                            caller_name())
                 event.accept()
+
             # Call the appropriate handler
             if hooks.invoke_handler(event, cgroup, jobutil):
                 pbs.logmsg(pbs.EVENT_DEBUG4,
@@ -4993,7 +6462,7 @@ def main():
         pbs.logmsg(pbs.EVENT_ERROR, msg)
         event.reject(msg)
     except Exception as exc:
-        # Catch all other exceptions and report them, job gets suspended
+        # Catch all other exceptions and report them, job gets held
         # and a stack trace is logged
         pbs.logmsg(pbs.EVENT_DEBUG,
                    str(traceback.format_exc().strip().splitlines()))
@@ -5004,16 +6473,16 @@ def main():
             try:
                 event.job.Hold_Types = pbs.hold_types('s')
                 event.job.rerun()
-                msg += ' (suspended)'
+                msg += ' (system hold set)'
             except Exception:
-                msg += ' (suspend failed)'
+                msg += ' (system hold failed)'
         msg += (': %s %s' % (exc.__class__.__name__, str(exc.args)))
         pbs.logmsg(pbs.EVENT_ERROR, msg)
         event.reject(msg)
 
 
 # The following block is skipped if this is a unit testing environment.
-if __name__ == 'builtins':
+if (__name__ == 'builtins') or (__name__ == '__builtin__'):
     START = time.time()
     try:
         main()
@@ -5022,8 +6491,26 @@ if __name__ == 'builtins':
         # SystemExit exception.
         pass
     except Exception:
+        # "Should never happen" since main() is supposed to catch these
         pbs.logmsg(pbs.EVENT_DEBUG,
                    str(traceback.format_exc().strip().splitlines()))
+        pbs.event().reject(str(traceback.format_exc().strip().splitlines()))
     finally:
-        pbs.logmsg(pbs.EVENT_DEBUG, 'Hook ended: %s (elapsed time: %0.4lf)' %
-                   (pbs.event().hook_name, (time.time() - START)))
+        event = pbs.event()
+        if event.type == pbs.EXECHOST_PERIODIC:
+            loglevel = pbs.EVENT_DEBUG3
+        else:
+            loglevel = pbs.EVENT_DEBUG2
+        if hasattr(event, 'job') and hasattr(event.job, 'id'):
+            pbs.logmsg(loglevel, 'Hook ended: %s, job ID %s, '
+                       'event_type %s (elapsed time: %0.4lf)' %
+                       (pbs.event().hook_name,
+                        event.job.id,
+                        str(pbs.event().type),
+                        (time.time() - START)))
+        else:
+            pbs.logmsg(loglevel, 'Hook ended: %s, '
+                       'event_type %s (elapsed time: %0.4lf)' %
+                       (pbs.event().hook_name,
+                        str(pbs.event().type),
+                        (time.time() - START)))
