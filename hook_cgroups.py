@@ -554,7 +554,10 @@ def find_files(path, pattern='*', kind='',
             if not kind:
                 yield name
                 continue
-            statinfo = os.lstat(name).st_mode
+            try:
+                statinfo = os.lstat(name).st_mode
+            except FileNotFoundError:
+                continue
             for entry in kind:
                 if not entry:
                     yield name
