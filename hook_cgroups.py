@@ -4781,24 +4781,27 @@ class CgroupUtils(object):
         """
         Set a cgroup limit on a node or a job
         """
+        nolimit = False
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         if jobid:
+            if ("place" in pbs.event().job.Resource_List and 'exclhost' in repr(pbs.event().job.Resource_List['place']) ):
+                nolimit = True
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s for job %s' %
                        (caller_name(), resource, value, jobid))
         else:
             pbs.logmsg(pbs.EVENT_DEBUG4, '%s: %s = %s for node' %
                        (caller_name(), resource, value))
         if resource == 'mem':
-            if 'memory' in self.subsystems:
+            if 'memory' in self.subsystems and not nolimit:
                 path = self._cgroup_path('memory', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'softmem':
-            if 'memory' in self.subsystems:
+            if 'memory' in self.subsystems and not nolimit:
                 path = self._cgroup_path('memory', 'soft_limit_in_bytes',
                                          jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'vmem':
-            if 'memsw' in self.subsystems:
+            if 'memsw' in self.subsystems and not nolimit:
                 if 'memory' not in self.subsystems:
                     path = self._cgroup_path('memory', 'limit_in_bytes',
                                              jobid)
@@ -4806,7 +4809,7 @@ class CgroupUtils(object):
                 path = self._cgroup_path('memsw', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'hpmem':
-            if 'hugetlb' in self.subsystems:
+            if 'hugetlb' in self.subsystems and not nolimit:
                 path = self._cgroup_path('hugetlb', 'limit_in_bytes', jobid)
                 self.write_value(path, size_as_int(value))
         elif resource == 'ncpus':
@@ -4829,7 +4832,10 @@ class CgroupUtils(object):
                                      ['cpu']
                                      ['zero_cpus_quota_fraction'])
                 else:
-                    self.write_value(path, int(value * 1000))
+                    if nolimit:
+                        self._copy_from_parent(path)
+                    else:
+                        self.write_value(path, int(value * 1000))
                 if (self.cfg['cgroup']['cpu']['enforce_per_period_quota']
                         or weightless):
                     # zero cpu jobs ALWAYS get a quota -- keep them honest
@@ -4855,7 +4861,10 @@ class CgroupUtils(object):
                             and (max_cfs_quota_us > 0)
                             and (cfs_quota_us_calculated > max_cfs_quota_us)):
                         cfs_quota_us_calculated = max_cfs_quota_us
-                    self.write_value(path, int(cfs_quota_us_calculated))
+                    if nolimit:
+                        self._copy_from_parent(path)
+                    else:
+                        self.write_value(path, int(cfs_quota_us_calculated))
         elif resource == 'cpuset.cpus':
             if 'cpuset' in self.subsystems:
                 path = self._cgroup_path('cpuset', 'cpus', jobid)
@@ -4863,14 +4872,17 @@ class CgroupUtils(object):
                 if not cpus:
                     raise CgroupLimitError('Failed to configure cpuset cpus')
                 cpus = ",".join(list(map(str, cpus)))
-                self.write_value(path, cpus)
+                if nolimit:
+                    self._copy_from_parent(path)
+                else:
+                    self.write_value(path, cpus)
         elif resource == 'cpuset.mems':
             if 'cpuset' in self.subsystems:
                 path = self._cgroup_path('cpuset', 'mems', jobid)
                 if not os.path.exists(path):
                     # probably zero cpu job now in root cpuset -- do nothing
                     return
-                if self.cfg['cgroup']['cpuset']['mem_fences']:
+                if self.cfg['cgroup']['cpuset']['mem_fences'] and not nolimit:
                     mems = value
                     if not mems:
                         raise CgroupLimitError(
