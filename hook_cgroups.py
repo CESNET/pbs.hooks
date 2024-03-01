@@ -2239,7 +2239,8 @@ class NodeUtils(object):
         # if this is an Intel based processor
         try:
             if ('Intel' in cpuinfo['cpu'][0]['vendor_id']
-                    or 'AuthenticAMD' in cpuinfo['cpu'][0]['vendor_id']):
+                    or 'AuthenticAMD' in cpuinfo['cpu'][0]['vendor_id']
+                    or ('AMD' in cpuinfo['cpu'][0]['vendor_id'] and 'EPYC' in  cpuinfo['cpu'][0]['model name'].upper())):
                 if 'ht' in cpuinfo['cpu'][0]['flags']:
                     cpuinfo['hyperthreads_per_core'] = \
                         int(cpuinfo['cpu'][0]['siblings']
