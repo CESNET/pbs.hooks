@@ -1,1 +1,1 @@
-# pbspro.hooks
+# pbs.hooks

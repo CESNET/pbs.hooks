@@ -20,8 +20,8 @@ set hook cgroups freq = 120
 set hook cgroups order = 2
 set hook cgroups debug = false
 set hook cgroups fail_action = none
-import hook cgroups application/x-python default /root/pbspro.hooks/hook_cgroups.py
-import hook cgroups application/x-config default /root/pbspro.hooks/hook_cgroups.json
+import hook cgroups application/x-python default /root/pbs.hooks/hook_cgroups.py
+import hook cgroups application/x-config default /root/pbs.hooks/hook_cgroups.json
 
 #
 # Create and define hook scratch
@@ -39,8 +39,8 @@ set hook scratch freq = 180
 set hook scratch order = 10
 set hook scratch debug = false
 set hook scratch fail_action = none
-import hook scratch application/x-python default /root/pbspro.hooks/hook_scratch.py
-import hook scratch application/x-config default /root/pbspro.hooks/hook_scratch.json
+import hook scratch application/x-python default /root/pbs.hooks/hook_scratch.py
+import hook scratch application/x-config default /root/pbs.hooks/hook_scratch.json
 
 #
 # Create and define hook license
@@ -55,7 +55,7 @@ set hook license alarm = 60
 set hook license order = 20
 set hook license debug = false
 set hook license fail_action = none
-import hook license application/x-python default /root/pbspro.hooks/hook_license.py
+import hook license application/x-python default /root/pbs.hooks/hook_license.py
 
 #
 # Create and define hook docker
@@ -71,7 +71,7 @@ set hook docker alarm = 60
 set hook docker order = 3
 set hook docker debug = false
 set hook docker fail_action = none
-import hook docker application/x-python default /root/pbspro.hooks/hook_docker.py
+import hook docker application/x-python default /root/pbs.hooks/hook_docker.py
 
 #
 # Create and define hook external-hooks
@@ -87,7 +87,7 @@ set hook external-hooks alarm = 300
 set hook external-hooks order = 15
 set hook external-hooks debug = false
 set hook external-hooks fail_action = none
-import hook external-hooks application/x-python default /root/pbspro.hooks/hook_external-hooks.py
+import hook external-hooks application/x-python default /root/pbs.hooks/hook_external-hooks.py
 
 #
 # Create and define hook job-enqueued
@@ -101,7 +101,7 @@ set hook job-enqueued alarm = 60
 set hook job-enqueued order = 1
 set hook job-enqueued debug = false
 set hook job-enqueued fail_action = none
-import hook job-enqueued application/x-python default /root/pbspro.hooks/hook_job-enqueued.py
+import hook job-enqueued application/x-python default /root/pbs.hooks/hook_job-enqueued.py
 
 #
 # Create and define hook env
@@ -115,7 +115,7 @@ set hook env alarm = 60
 set hook env order = 10
 set hook env debug = false
 set hook env fail_action = none
-import hook env application/x-python default /root/pbspro.hooks/hook_env.py
+import hook env application/x-python default /root/pbs.hooks/hook_env.py
 
 #
 # Create and define hook health-check
@@ -131,8 +131,8 @@ set hook health-check freq = 300
 set hook health-check order = 1
 set hook health-check debug = false
 set hook health-check fail_action = none
-import hook health-check application/x-python default /root/pbspro.hooks/hook_health-check.py
-import hook health-check application/x-config default /root/pbspro.hooks/hook_health-check.json
+import hook health-check application/x-python default /root/pbs.hooks/hook_health-check.py
+import hook health-check application/x-config default /root/pbs.hooks/hook_health-check.json
 
 #
 # Create and define hook res_discovery
@@ -148,8 +148,8 @@ set hook res_discovery freq = 3600
 set hook res_discovery order = 5
 set hook res_discovery debug = false
 set hook res_discovery fail_action = none
-import hook res_discovery application/x-python default /root/pbspro.hooks/hook_res_discovery.py
-import hook res_discovery application/x-config default /root/pbspro.hooks/hook_res_discovery.json
+import hook res_discovery application/x-python default /root/pbs.hooks/hook_res_discovery.py
+import hook res_discovery application/x-config default /root/pbs.hooks/hook_res_discovery.json
 
 #
 # Create and define hook uvsize
@@ -164,7 +164,7 @@ set hook uvsize alarm = 60
 set hook uvsize order = 2
 set hook uvsize debug = false
 set hook uvsize fail_action = none
-import hook uvsize application/x-python default /root/pbspro.hooks/hook_uvsize.py
+import hook uvsize application/x-python default /root/pbs.hooks/hook_uvsize.py
 
 #
 # Create and define hook uv_ncpus
@@ -179,7 +179,7 @@ set hook uv_ncpus alarm = 60
 set hook uv_ncpus order = 2
 set hook uv_ncpus debug = false
 set hook uv_ncpus fail_action = none
-import hook uv_ncpus application/x-python default /root/pbspro.hooks/hook_uv_ncpus.py
+import hook uv_ncpus application/x-python default /root/pbs.hooks/hook_uv_ncpus.py
 
 #
 # Create and define hook fairshare
@@ -195,7 +195,7 @@ set hook fairshare freq = 3600
 set hook fairshare order = 1
 set hook fairshare debug = false
 set hook fairshare fail_action = none
-import hook fairshare application/x-python default /root/pbspro.hooks/hook_fairshare.py
+import hook fairshare application/x-python default /root/pbs.hooks/hook_fairshare.py
 
 #
 # Create and define hook overcommit_detector
@@ -209,7 +209,7 @@ set hook overcommit_detector alarm = 30
 set hook overcommit_detector order = 1
 set hook overcommit_detector debug = false
 set hook overcommit_detector fail_action = none
-import hook overcommit_detector application/x-python default /root/pbspro.hooks/hook_overcommit_detector.py
+import hook overcommit_detector application/x-python default /root/pbs.hooks/hook_overcommit_detector.py
 
 #
 # Create and define hook node_owner
@@ -223,8 +223,8 @@ set hook node_owner alarm = 60
 set hook node_owner order = 1
 set hook node_owner debug = false
 set hook node_owner fail_action = none
-import hook node_owner application/x-python default /root/pbspro.hooks/hook_node_owner.py
-import hook node_owner application/x-config default /root/pbspro.hooks/hook_node_owner.json
+import hook node_owner application/x-python default /root/pbs.hooks/hook_node_owner.py
+import hook node_owner application/x-config default /root/pbs.hooks/hook_node_owner.json
 
 create hook meta-pbs_large_mem
 set hook meta-pbs_large_mem type = site
@@ -235,7 +235,7 @@ set hook meta-pbs_large_mem alarm = 60
 set hook meta-pbs_large_mem order = 1
 set hook meta-pbs_large_mem debug = false
 set hook meta-pbs_large_mem fail_action = none
-import hook meta-pbs_large_mem application/x-python default /root/pbspro.hooks/hook_meta-pbs_large_mem.py
+import hook meta-pbs_large_mem application/x-python default /root/pbs.hooks/hook_meta-pbs_large_mem.py
 
 #
 # Create and define hook rapid
@@ -251,7 +251,7 @@ set hook rapid freq = 60
 set hook rapid order = 1
 set hook rapid debug = false
 set hook rapid fail_action = none
-import hook rapid application/x-python default /root/pbspro.hooks/hook_rapid.py
+import hook rapid application/x-python default /root/pbs.hooks/hook_rapid.py
 
 #
 # Create and define hook gpu8
@@ -265,4 +265,4 @@ set hook gpu8 alarm = 60
 set hook gpu8 order = 1
 set hook gpu8 debug = false
 set hook gpu8 fail_action = none
-import hook gpu8 application/x-python default /root/pbspro.hooks/hook_gpu8.py
+import hook gpu8 application/x-python default /root/pbs.hooks/hook_gpu8.py
