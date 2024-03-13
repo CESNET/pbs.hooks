@@ -2547,6 +2547,8 @@ class NodeUtils(object):
         vnode_msg_cpu = '%s: vnode_list[%s].resources_available[ncpus] = %d'
         vnode_msg_mem = '%s: vnode_list[%s].resources_available[mem] = %s'
 
+        host_resc_avail['ngpus'] = None
+
         if not vnodes:
             # memory (global for host)
             mem = self.get_memory_on_node(ignore_reserved=False)
