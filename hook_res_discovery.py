@@ -52,6 +52,9 @@ class Discovery(object):
         if self.getandset_gpu_mem() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set gpu_mem resource" % self.hook_name)
 
+        if self.getandset_gpu_cap() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set gpu_cap resource" % self.hook_name)
+
         if self.getandset_spec() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set spec resource" % self.hook_name)
 
@@ -336,6 +339,37 @@ class Discovery(object):
             if gpu_mem > 0:
                self.vnl[self.local_node].resources_available["gpu_mem"] = pbs.size("%dmb" % gpu_mem)
                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource gpu_mem set to: %d mb" % (self.hook_name, gpu_mem))
+               return True
+
+        return False
+
+    ################################################
+    # gpu_cap
+    ################################################
+    def getandset_gpu_cap(self):
+        cmd = ['nvidia-smi', '--query-gpu=compute_cap', '--format=csv']
+        try:
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            nvidia_smi = result.communicate()[0].decode("utf-8").strip()
+            returncode = result.returncode
+
+            if returncode != 0:
+                nvidia_smi=""
+        except:
+            nvidia_smi = ""
+
+        gpu_cap = None
+        if len(nvidia_smi) > 0:
+            for line in nvidia_smi.split('\n'):
+                if line == "compute_cap":
+                    continue
+                if line.find(".") == -1:
+                    continue
+                gpu_cap = "sm_" + line.replace(".", "")
+
+            if gpu_cap:
+               self.vnl[self.local_node].resources_available["gpu_cap"] = gpu_cap
+               pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource gpu_cap set to: %s" % (self.hook_name, gpu_cap))
                return True
 
         return False
