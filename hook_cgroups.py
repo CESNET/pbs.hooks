@@ -2360,6 +2360,7 @@ class CgroupUtils(object):
         defaults['server_timeout'] = 15
         defaults['job_setup_timeout'] = 30
         defaults['placement_type'] = 'load_balanced'
+        defaults['no_enforcement_hosts'] = []
         defaults['cgroup'] = {}
         defaults['cgroup']['blkio'] = {}
         defaults['cgroup']['blkio']['enabled'] = False
@@ -2869,6 +2870,8 @@ class CgroupUtils(object):
         if 'enabled' not in self.cfg['cgroup'][subsystem]:
             return False
         if not self.cfg['cgroup'][subsystem]['enabled']:
+            return False
+        if subsystem == 'cpuset' and self.check_no_enforcement(self.hostname):
             return False
         # Check whether the cgroup is mounted for this subsystem
         if subsystem not in self.paths:
@@ -3685,11 +3688,16 @@ class CgroupUtils(object):
             pbs.logmsg(pbs.EVENT_DEBUG2, '%s: Failed to adjust %s: %s' %
                        (caller_name(), path, exc))
 
+    def check_no_enforcement(self, host):
+        if host in self.cfg['no_enforcement_hosts']:
+            return True
+        return False
+
     def set_limit(self, resource, value, jobid=''):
         """
         Set a cgroup limit on a node or a job
         """
-        nolimit = False
+        nolimit = self.check_no_enforcement(self.hostname)
         pbs.logmsg(pbs.EVENT_DEBUG4, '%s: Method called' % caller_name())
         if jobid:
             if ("place" in pbs.event().job.Resource_List and 'exclhost' in repr(pbs.event().job.Resource_List['place']) ):
