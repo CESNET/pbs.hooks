@@ -1,6 +1,24 @@
 import pbs
 import re
 
+def parse_size_resource(res, input):
+    kb = 0
+    m = re.search(res + '=([0-9]+)([a-zA-Z]+)', input)
+    if m:
+        size = int(m.group(1))
+        unit = m.group(2).lower()
+        if unit == "b":
+            kb = int(size / 1024)
+        if unit == "kb":
+            kb = size
+        if unit == "mb":
+            kb = int(size * 1024)
+        if unit == "gb":
+            kb = int(size * 1024 * 1024)
+        if unit == "tb":
+            kb = int(size * 1024 * 1024 * 1024)
+    return kb
+
 try:
     e = pbs.event()
 
@@ -28,9 +46,9 @@ try:
             if m:
                 resources[node_i]["ngpus"] += int(m.group(1))
 
-            m = re.search('mem=([0-9]+)kb', i)
-            if m:
-                resources[node_i]["mem"] += int(m.group(1)) * 1024
+            size = parse_size_resource("mem", i)
+            if size:
+                resources[node_i]["mem"] += size * 1024
 
         pbs.logmsg(pbs.EVENT_DEBUG, "env hook, resources: %s" % str(resources))
 

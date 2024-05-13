@@ -51,7 +51,23 @@ def parse_cfg():
 
     return config
 
-
+def parse_size_resource(res, input):
+    kb = 0
+    m = re.search(res + '=([0-9]+)([a-zA-Z]+)', input)
+    if m:
+        size = int(m.group(1))
+        unit = m.group(2).lower()
+        if unit == "b":
+            kb = int(size / 1024)
+        if unit == "kb":
+            kb = size
+        if unit == "mb":
+            kb = int(size * 1024)
+        if unit == "gb":
+            kb = int(size * 1024 * 1024)
+        if unit == "tb":
+            kb = int(size * 1024 * 1024 * 1024)
+    return kb
 
 def parse_exec_vnode(exec_vnode, schedselect):
     resources = {}
@@ -66,11 +82,11 @@ def parse_exec_vnode(exec_vnode, schedselect):
 
         # posledni nalezeny scratch je pouzity
         for scratch_i in ["scratch_shared", "scratch_ssd", "scratch_local"]:
-            m = re.search(scratch_i + '=([0-9]+?)kb', i)
-            if m:
+            size = parse_size_resource(scratch_i, i)
+            if size:
                 if not scratch_i in resources[node_i].keys():
                     resources[node_i][scratch_i] = 0
-                resources[node_i][scratch_i] += int(m.group(1))
+                resources[node_i][scratch_i] += size
                 resources[node_i]["scratch_type"] = scratch_i
 
         if schedselect:
@@ -78,9 +94,9 @@ def parse_exec_vnode(exec_vnode, schedselect):
             if m:
                 resources[node_i]["scratch_type"] = "scratch_shm"
                 resources[node_i]["scratch_shm"] = 409600
-                m = re.search('mem=([0-9]+?)kb', i)
-                if m:
-                    resources[node_i]["scratch_shm"] = int(m.group(1))
+                size = parse_size_resource("mem", i)
+                if size:
+                    resources[node_i]["scratch_shm"] = size
 
     return resources
 
