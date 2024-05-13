@@ -29,13 +29,6 @@ try:
     if e.type == pbs.QUEUEJOB:
         j = e.job
 
-        # checking directly submited job suitability (in interactive queue)
-        if str(j.queue) == interactive_queue:
-            if check_interactive_suitable(j):
-                e.accept()
-            else:
-                e.reject("job is not suitable for the queue: %s" % str(interactive_queue))
-
         # move suitable jobs to interactive queue
         if str(j.queue) == "" or str(j.queue) == default_queue:
             if check_interactive_suitable(j):
