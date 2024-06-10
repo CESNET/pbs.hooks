@@ -1,7 +1,5 @@
 import pbs
-import sys
 import re
-import datetime
 import os
 import pwd
 import grp
@@ -113,6 +111,27 @@ def check_scratch_use_as(config, scratch_type, node):
 
     return None
 
+def set_permissions(user, umask, path):
+    uid = pwd.getpwnam(user).pw_uid
+    gid = pwd.getpwnam(user).pw_gid
+    if group:
+        # override group setup
+        try:
+            # list all user suplemental groups - for cross-check
+            groups = [g.gr_name for g in grp.getgrall() if user in g.gr_mem]
+            # add user primary group - gid is still user primary group id
+            groups.append(grp.getgrgid(gid).gr_name)
+            if group in groups:
+                # try to use provided group name
+                gid = grp.getgrnam(group).gr_gid
+        except:
+            # this should not happen but ignore if the group is not defined on this node
+            pass
+    os.chown(path, uid, gid)
+    if umask:
+        # mode is a complement to umask
+        os.chmod(path,0o777^int(str(umask),8))
+
 
 
 try:
@@ -201,33 +220,32 @@ try:
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
 
-            try:
-                if scratch_type == "scratch_shm":
-                    os.makedirs(path)
-                else:
-                    os.mkdir(path)
-                uid = pwd.getpwnam(user).pw_uid
-                gid = pwd.getpwnam(user).pw_gid
-                if group:
-                    # override group setup
-                    try:
-                        # list all user suplemental groups - for cross-check
-                        groups = [g.gr_name for g in grp.getgrall() if user in g.gr_mem]
-                        # add user primary group - gid is still user primary group id
-                        groups.append(grp.getgrgid(gid).gr_name)
-                        if group in groups:
-                            # try to use provided group name
-                            gid = grp.getgrnam(group).gr_gid
-                    except:
-                        # this should not happen but ignore if the group is not defined on this node
-                        pass
-                os.chown(path, uid, gid)
-                if umask:
-                    # mode is a complement to umask
-                    os.chmod(path,0o777^int(str(umask),8))
-            except Exception as err:
-                pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s, err: %s" % (path,str(err)))
-                e.reject("scratch hook failed: %s" % str(err))
+            if os.path.isdir(path):
+                exists_prefix = ".run_count"
+                try:
+                    backup_path = "%s/%s-%d" % (path, exists_prefix, j.run_count)
+                    os.mkdir(backup_path)
+                    set_permissions(user, umask, backup_path)
+
+                    files = os.listdir(path)
+                    for file in files:
+                        if file.startswith(exists_prefix):
+                            continue
+                        shutil.move(os.path.join(path, file), backup_path)
+                except Exception as err:
+                    pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create and move to %s-%d SCRATCHDIR %s, err: %s" % (exists_prefix, j.run_count, path, str(err)))
+                    e.reject("scratch hook failed: %s" % str(err))
+            else:
+                try:
+                    if scratch_type == "scratch_shm":
+                        os.makedirs(path)
+                    else:
+                        os.mkdir(path)
+                    set_permissions(user, umask, path)
+
+                except Exception as err:
+                    pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s, err: %s" % (path, str(err)))
+                    e.reject("scratch hook failed: %s" % str(err))
 
             #nastaveni env, hodnoty vynasobime 1024, jednotky maji byt v B
 
