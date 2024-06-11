@@ -19,14 +19,23 @@ class Discovery(object):
     def __init__(self, pbs_event):
         self.hook_events = { pbs.EXECHOST_STARTUP: self.__setallresources_handler,
                              pbs.EXECHOST_PERIODIC: self.__setallresources_handler,
+                             pbs.EXECJOB_BEGIN: self.__setjobresources_handler,
                            }
         self.e = pbs_event
         self.vnl = pbs.event().vnode_list
         self.local_node = pbs.get_local_nodename()
 
+        self.parse_cfg()
+
         if self.vnl == None or self.local_node == None:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get local_node or vnl" % self.hook_name)
             self.e.accept()
+
+
+
+    def __setjobresources_handler(self):
+        job = self.e.job
+        self.job_set_partner(job)
 
 
 
@@ -58,6 +67,9 @@ class Discovery(object):
         if self.getandset_pbs_server() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set pbs_server resource" % self.hook_name)
 
+        if self.getandset_partner() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set partner resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -72,6 +84,8 @@ class Discovery(object):
 
 
     def parse_cfg(self):
+        self.partner = {}
+
         config = {}
         if 'PBS_HOOK_CONFIG_FILE' in os.environ:
             config_file = os.environ["PBS_HOOK_CONFIG_FILE"]
@@ -98,6 +112,10 @@ class Discovery(object):
                 for noder in config["spec"].keys():
                     self.spec[noder] = config["spec"][noder]
 
+            if "partner" in config.keys():
+                for r in config["partner"].keys():
+                    self.partner[r] = config["partner"][r]
+
         except Exception as err:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to parse config '%s'" % (self.hook_name, err))
             return False
@@ -111,9 +129,6 @@ class Discovery(object):
     ################################################
     def getandset_cgroups(self):
         flags = []
-        
-        if not self.parse_cfg():
-            return False
 
         if self.local_node in self.exclude_hosts["general"]:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, cgroups flags on %s: %s" % (self.hook_name, self.local_node, str(flags))) 
@@ -344,9 +359,6 @@ class Discovery(object):
     # spec
     ################################################
     def getandset_spec(self):
-        if not self.parse_cfg():
-            return False
-
         for noder in self.spec.keys():
             if re.search(noder, self.local_node):
                 self.vnl[self.local_node].resources_available["spec"] = self.spec[noder]
@@ -365,6 +377,32 @@ class Discovery(object):
         self.vnl[self.local_node].resources_available["pbs_server"] = pbs_server
         pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource pbs_server set to: %s" % (self.hook_name, pbs_server))
         return True
+
+    ################################################
+    # partner
+    ################################################
+    def job_set_partner(self, job):
+        if job.in_ms_mom():
+            try:
+                node = pbs.server().vnode(pbs.get_local_nodename())
+                partner = node.resources_available['partner']
+                if partner == None:
+                    return
+                job.resources_used["partner"] = partner
+            except Exception as err:
+                return
+
+    def getandset_partner(self):
+        if not self.partner:
+            return False
+        mom = pbs.server().vnode(self.local_node).Mom
+        for r in self.partner.keys():
+            if re.search(r, mom):
+                partner = self.partner[r]
+                self.vnl[self.local_node].resources_available["partner"] = partner
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource partner set to: %s" % (self.hook_name, partner))
+                return True
+        return False
 
 try:
     e = pbs.event()

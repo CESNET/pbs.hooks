@@ -27,6 +27,24 @@
         }
     },
 
+    "partner": {
+        "elan[0-9]*.cerit-sc.cz": "Elixir",
+
+        ".*grid.cesnet.cz": "MetaCentrum",
+        ".*metacentrum.cz": "MetaCentrum",
+        ".*meta.zcu.cz": "MetaCentrum",
+        ".*natur.cuni.cz": "MetaCentrum",
+        ".*nti.tul.cz": "MetaCentrum",
+        ".*ibot.cas.cz": "MetaCentrum",
+        ".*ics.muni.cz": "MetaCentrum",
+        ".*fav.zcu.cz": "MetaCentrum",
+        ".*fzu.cz": "MetaCentrum",
+        ".*ueb.cas.cz": "MetaCentrum",
+        ".*upol.cz": "MetaCentrum",
+        ".*cerit-sc.cz": "Cerit-SC",
+        ".*elixir-czech.cz": "Elixir"
+    },
+
     "spec": {
         "^carex.*": 6.7,
         "^draba.*": 5.2,
