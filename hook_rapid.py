@@ -5,9 +5,10 @@ import os
 default_queue = "default"
 interactive_queue = "interactive"
 max_duration = pbs.duration("48:00:00")
+allowed_hosts = ["ondemand.grid.cesnet.cz"]
 
-def check_interactive_suitable(j):
-    if not j.interactive:
+def check_interactive_suitable(j, r):
+    if not j.interactive and not r in allowed_hosts:
         return False
 
     if j.Resource_List["walltime"] and pbs.duration(j.Resource_List["walltime"]) > max_duration:
@@ -24,10 +25,18 @@ try:
     e = pbs.event()
     if e.type == pbs.QUEUEJOB:
         j = e.job
+        requestor_host = e.requestor_host
+
+        # checking directly submited job suitability (in interactive queue)
+        if str(j.queue) == interactive_queue:
+            if check_interactive_suitable(j, requestor_host):
+                e.accept()
+            else:
+                e.reject("job is not suitable for the queue: %s" % str(interactive_queue))
 
         # move suitable jobs to interactive queue
         if str(j.queue) == "" or str(j.queue) == default_queue:
-            if check_interactive_suitable(j):
+            if check_interactive_suitable(j, requestor_host):
                 q = pbs.server().queue(interactive_queue)
                 j.queue = q
 
