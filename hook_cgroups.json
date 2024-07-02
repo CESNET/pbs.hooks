@@ -74,7 +74,7 @@
             "reserve_amount"     : "0GB"
         },
         "memsw" : {
-            "enabled"            : false,
+            "enabled"            : true,
             "exclude_hosts"      : [],
             "exclude_vntypes"    : [],
             "enforce_default"    : true,
