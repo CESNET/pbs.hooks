@@ -5,7 +5,7 @@ import os
 default_queue = "default"
 interactive_queue = "interactive"
 max_duration = pbs.duration("48:00:00")
-allowed_hosts = ["ondemand.grid.cesnet.cz"]
+allowed_hosts = ["ondemand.grid.cesnet.cz", "ondemand-dev.grid.cesnet.cz"]
 
 def check_interactive_suitable(j, r):
     if not j.interactive and not r in allowed_hosts:
