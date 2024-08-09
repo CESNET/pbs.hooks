@@ -23,6 +23,9 @@ def move_job(queue, jid):
 
 try:
     e = pbs.event()
+    if e.type == pbs.MODIFYJOB:
+        e.accept()
+
     if e.type == pbs.QUEUEJOB:
         j = e.job
         requestor_host = e.requestor_host
@@ -35,8 +38,10 @@ try:
                 e.reject("job is not suitable for the queue: %s" % str(interactive_queue))
 
         # move suitable jobs to interactive queue
-        if str(j.queue) == "" or str(j.queue) == default_queue:
+        if str(j.queue) in ["", default_queue]:
             if check_interactive_suitable(j, requestor_host):
+                if e.type == pbs.MODIFYJOB:
+                    e.accept()
                 q = pbs.server().queue(interactive_queue)
                 j.queue = q
 

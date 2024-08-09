@@ -18,7 +18,7 @@ def parse_cfg():
 
 try:
     e = pbs.event()
-    if e.type == pbs.QUEUEJOB:
+    if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
         node_owner = "everybody"
 

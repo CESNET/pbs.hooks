@@ -139,7 +139,7 @@ try:
 
 
 
-    if e.type == pbs.QUEUEJOB:
+    if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
         if "scratch_shared" in j.Resource_List.keys():
             e.reject("scratch_shared requires 'select' syntax")

@@ -15,7 +15,7 @@ try:
 
         e.reject("Can not move the job into the queue '%s'. Please, submit directly." % queue_name)
 
-    if e.type == pbs.QUEUEJOB:
+    if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
 
         if str(j.queue).split("@")[0] != queue_name:

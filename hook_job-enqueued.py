@@ -4,7 +4,7 @@ import math
 
 try:
     e = pbs.event()
-    if e.type == pbs.QUEUEJOB:
+    if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
         if "nodes" in j.Resource_List.keys():
             pbs.logmsg(pbs.EVENT_DEBUG,"Resource_List: " + str(j.Resource_List.keys()))

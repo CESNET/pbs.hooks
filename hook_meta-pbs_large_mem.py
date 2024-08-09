@@ -1,15 +1,15 @@
 import pbs
 import re
-import math
 
 max_walltime = 172800
 min_mem = 524288000
+large_queue = "large_mem"
 
 try:
     e = pbs.event()
-    if e.type == pbs.QUEUEJOB:
+    if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
-        if str(j.queue) in ["default", ""]:
+        if str(j.queue) in ["default", "", large_queue]:
             if j.Resource_List["walltime"] != None:
                 splitwalltime = str(j.Resource_List["walltime"]).split(":")
                 sec = 0
@@ -29,7 +29,10 @@ try:
                     sec = int(splitwalltime[2])
 
                 if (sec + min2sec + hour2sec) > max_walltime:
-                    e.accept()
+                    if str(j.queue) in ["default", ""]:
+                        e.accept()
+                    if str(j.queue) == large_queue:
+                        e.reject(f"max allwed waltime is {max_walltime} seconds")
 
             if "select" in j.Resource_List.keys():
                 mem = 0 # KB
@@ -70,9 +73,19 @@ try:
                     if m:
                         e.accept()
 
-                if mem >= min_mem:
-                    j.queue = pbs.server().queue("large_mem")
+                if e.type == pbs.QUEUEJOB:
+                    if str(j.queue) == large_queue and mem < min_mem:
+                        e.reject(f"mem too small for {large_queue}")
 
+                    if str(j.queue) in ["default", ""] and mem >= min_mem:
+                        j.queue = pbs.server().queue(large_queue)
+
+                if e.type == pbs.MODIFYJOB:
+                    if str(j.queue) == large_queue and  mem < min_mem:
+                        e.reject(f"can not modify job, memory too small for '{large_queue}', please resubmit")
+
+                    if str(j.queue) in ["default", ""] and  mem >= min_mem:
+                        e.reject("can not modify job, memory too large, please resubmit")
 except SystemExit:
     pass
 except Exception as err:
