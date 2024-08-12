@@ -270,3 +270,20 @@ set hook gpu8 order = 1
 set hook gpu8 debug = false
 set hook gpu8 fail_action = none
 import hook gpu8 application/x-python default /root/pbs.hooks/hook_gpu8.py
+
+#
+# Create and define hook singularity
+#
+create hook singularity
+set hook singularity type = site
+set hook singularity enabled = true
+set hook singularity event = queuejob
+set hook singularity event += modifyjob
+set hook singularity event += execjob_launch
+set hook singularity event += execjob_end
+set hook singularity user = pbsadmin
+set hook singularity alarm = 120
+set hook singularity order = 100
+set hook singularity debug = false
+set hook singularity fail_action = none
+import hook singularity application/x-python default /root/pbs.hooks/hook_singularity.py
