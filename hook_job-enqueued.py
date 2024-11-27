@@ -28,9 +28,6 @@ try:
                 m = re.search('.*ncpus=([0-9]+).*', i)
                 if m:
                     ncpus = int(m.group(1))
-                else:
-                    newselect.append(i)
-                    continue
 
                 m = re.search('.*mpiprocs=([0-9]+).*', i)
                 if m:
@@ -39,6 +36,19 @@ try:
                 m = re.search('.*ompthreads=([0-9]+).*', i)
                 if m:
                     ompthreads = int(m.group(1))
+
+                if not ncpus:
+                    if not mpiprocs and not ompthreads:
+                        newselect.append(i)
+                        continue
+                    else:
+                        if mpiprocs and ompthreads:
+                            ncpus = mpiprocs * ompthreads
+                        if not mpiprocs:
+                            ncpus = ompthreads
+                        if not ompthreads:
+                            ncpus = mpiprocs
+                        i += ":ncpus=%d" % ncpus
 
                 if not mpiprocs and not ompthreads:
                     mpiprocs = ncpus
