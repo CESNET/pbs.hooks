@@ -465,10 +465,10 @@ try:
                         for f in files:
                             filepath = os.path.join(path, f)
 
-                            if not os.path.isfile(filepath):
+                            if os.path.islink(filepath):
                                 continue
 
-                            if os.path.islink(filepath):
+                            if not os.path.isfile(filepath):
                                 continue
 
                             s = os.stat(filepath)
@@ -520,6 +520,9 @@ try:
                     for i in os.listdir(scratchpath):
                         p = os.path.join(scratchpath, i)
 
+                        if os.path.islink(p):
+                            continue
+
                         # check files in scratch root
                         if os.path.isfile(p):
                             filestocheck.append(p)
@@ -531,14 +534,17 @@ try:
                         for j in os.listdir(p):
                             k = os.path.join(p, j)
 
+                            if os.path.islink(k):
+                                continue
+
                             if os.path.isfile(k):
                                 filestocheck.append(k)
 
                     for i in filestocheck:
-                        if not os.path.isfile(i):
+                        if os.path.islink(i):
                             continue
 
-                        if os.path.islink(i):
+                        if not os.path.isfile(i):
                             continue
 
                         s = os.stat(i)
