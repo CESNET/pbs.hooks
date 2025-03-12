@@ -172,7 +172,8 @@ try:
 
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
-        scratch_type = None        
+        scratch_type = None
+        include_host_dir = False
         node = pbs.get_local_nodename()
 
         config = parse_cfg()
@@ -191,6 +192,9 @@ try:
 
         # check if type conversion is defined
         scratch_use_as = check_scratch_use_as(config, scratch_type, node)
+
+        if scratch_type == "scratch_local" and scratch_use_as == "scratch_shared":
+            include_host_dir = True
 
         if scratch_use_as:
             scratch_type = scratch_use_as
@@ -215,7 +219,10 @@ try:
             # umask is taken from the job if set
             umask = j.umask
 
-            path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
+            if include_host_dir:
+                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], socket.gethostname(), user, j.id)
+            else:
+                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
 
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
@@ -237,7 +244,7 @@ try:
                     e.reject("scratch hook failed: %s" % str(err))
             else:
                 try:
-                    if scratch_type == "scratch_shm":
+                    if scratch_type == "scratch_shm" or include_host_dir:
                         os.makedirs(path)
                     else:
                         os.mkdir(path)
@@ -299,6 +306,7 @@ try:
 
     if e.type == pbs.EXECJOB_END:
         scratch_type = None
+        include_host_dir = False
         j = e.job
         node = pbs.get_local_nodename()
         user = j.Job_Owner.split("@")[0]
@@ -313,11 +321,17 @@ try:
         # check if type conversion is defined
         scratch_use_as = check_scratch_use_as(config, scratch_type, node)
 
+        if scratch_type == "scratch_local" and scratch_use_as == "scratch_shared":
+            include_host_dir = True
+
         if scratch_use_as:
             scratch_type = scratch_use_as
 
         if scratch_type:
-            path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
+            if include_host_dir:
+                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], socket.gethostname(), user, j.id)
+            else:
+                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
 
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
