@@ -172,6 +172,7 @@ try:
 
     if e.type == pbs.EXECJOB_BEGIN:
         j = e.job
+        short_jobid = re.sub(r'\.[^\.]+\.[^\.]+$', '', j.id)
         scratch_type = None
         include_host_dir = False
         node = pbs.get_local_nodename()
@@ -220,9 +221,12 @@ try:
             umask = j.umask
 
             if include_host_dir:
-                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], socket.gethostname(), user, j.id)
+                host_dir = re.sub(r'[^0-9]+', '', socket.gethostname())
+                if len(host_dir) == 0:
+                    host_dir = re.sub(r'\.[^\.]+\.[^\.]+$', '', socket.gethostname())
+                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], host_dir, user, short_jobid)
             else:
-                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
+                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, short_jobid)
 
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
@@ -286,7 +290,7 @@ try:
             j.Variable_List["PBS_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
             j.Variable_List["TORQUE_RESC_TOTAL_SCRATCH_VOLUME"]=scratch_total_size * 1024
         else:
-            path="/var/tmp/pbs.%s" % j.id
+            path="/var/tmp/pbs.%s" % short_jobid
 
             j.Variable_List["SCRATCHDIR"]=path
             j.Variable_List["SCRATCH"]=path
@@ -308,6 +312,7 @@ try:
         scratch_type = None
         include_host_dir = False
         j = e.job
+        short_jobid = re.sub(r'\.[^\.]+\.[^\.]+$', '', j.id)
         node = pbs.get_local_nodename()
         user = j.Job_Owner.split("@")[0]
         resources = parse_exec_vnode(j.exec_vnode, j.schedselect)
@@ -329,9 +334,12 @@ try:
 
         if scratch_type:
             if include_host_dir:
-                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], socket.gethostname(), user, j.id)
+                host_dir = re.sub(r'[^0-9]+', '', socket.gethostname())
+                if len(host_dir) == 0:
+                    host_dir = re.sub(r'\.[^\.]+\.[^\.]+$', '', socket.gethostname())
+                path="/%s/%s/%s/job_%s" % (scratch_paths[scratch_type], host_dir, user, short_jobid)
             else:
-                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, j.id)
+                path="/%s/%s/job_%s" % (scratch_paths[scratch_type], user, short_jobid)
 
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
