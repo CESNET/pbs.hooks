@@ -11,7 +11,7 @@
     "discover_gpus"         : true,
     "manage_rlimit_as"      : true,
     "no_enforcement_hosts"  : [
-                              "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14", "elmo5-15", "elmo5-16", "elmo5-17", "elmo5-18", "elmo5-19", "elmo5-20", "elmo5-21", "elmo5-22", "elmo5-23", "elmo5-24", "elmo5-25", "elmo5-26", "elmo5-27"
+                              "elmo5-1", "elmo5-2", "elmo5-3", "elmo5-4", "elmo5-5", "elmo5-6", "elmo5-7", "elmo5-8", "elmo5-9", "elmo5-10", "elmo5-11", "elmo5-12", "elmo5-13", "elmo5-14", "elmo5-15", "elmo5-16", "elmo5-17", "elmo5-18", "elmo5-19", "elmo5-20", "elmo5-21", "elmo5-22", "elmo5-23", "elmo5-24", "elmo5-25", "elmo5-26", "elmo5-27", "elmo5-28"
                               ],
     "cgroup" : {
         "cpuacct" : {
