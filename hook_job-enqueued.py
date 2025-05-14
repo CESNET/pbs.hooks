@@ -10,6 +10,10 @@ try:
             pbs.logmsg(pbs.EVENT_DEBUG,"Resource_List: " + str(j.Resource_List.keys()))
             e.reject("Old syntax rejected. Please use 'select' syntax.")
 
+        if "preempt_targets" in j.Resource_List.keys():
+            pbs.logmsg(pbs.EVENT_DEBUG,"Resource_List: " + str(j.Resource_List.keys()))
+            e.reject("Users are not allowed to set 'preempt_targets'.")
+
         #  mpiprocs = ncpus/ompthreads
         #  ompthreads = ncpus/mpiprocs
         if "select" in j.Resource_List.keys():
