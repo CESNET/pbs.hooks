@@ -111,6 +111,13 @@ def check_scratch_use_as(config, scratch_type, node):
 
     return None
 
+def should_create_dir(job, scratch_type, include_host_dir):
+    if include_host_dir:
+        return True
+    if scratch_type == "scratch_shared" and not job.in_ms_mom():
+        return False
+    return True
+
 def set_permissions(user, umask, path):
     uid = pwd.getpwnam(user).pw_uid
     gid = pwd.getpwnam(user).pw_gid
@@ -132,12 +139,8 @@ def set_permissions(user, umask, path):
         # mode is a complement to umask
         os.chmod(path,0o777^int(str(umask),8))
 
-
-
 try:
     e = pbs.event()
-
-
 
     if e.type in [pbs.QUEUEJOB, pbs.MODIFYJOB]:
         j = e.job
@@ -231,7 +234,7 @@ try:
             if scratch_type == "scratch_shm":
                 path = scratch_shm_dir + path
 
-            if os.path.isdir(path):
+            if os.path.isdir(path) and should_create_dir(j, scratch_type, include_host_dir):
                 exists_prefix = ".run_count"
                 try:
                     backup_path = "%s/%s-%d" % (path, exists_prefix, j.run_count)
@@ -246,7 +249,7 @@ try:
                 except Exception as err:
                     pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create and move to %s-%d SCRATCHDIR %s, err: %s" % (exists_prefix, j.run_count, path, str(err)))
                     e.reject("scratch hook failed: %s" % str(err))
-            else:
+            elif should_create_dir(j, scratch_type, include_host_dir):
                 try:
                     if scratch_type == "scratch_shm" or include_host_dir:
                         os.makedirs(path)
@@ -254,6 +257,8 @@ try:
                         os.mkdir(path)
                     set_permissions(user, umask, path)
 
+                except FileExistsError:
+                    pass
                 except Exception as err:
                     pbs.logmsg(pbs.EVENT_DEBUG, "Failed to create SCRATCHDIR %s, err: %s" % (path, str(err)))
                     e.reject("scratch hook failed: %s" % str(err))
@@ -332,7 +337,7 @@ try:
         if scratch_use_as:
             scratch_type = scratch_use_as
 
-        if scratch_type:
+        if scratch_type and should_create_dir(j, scratch_type, include_host_dir):
             if include_host_dir:
                 host_dir = re.sub(r'[^0-9]+', '', socket.gethostname())
                 if len(host_dir) == 0:
