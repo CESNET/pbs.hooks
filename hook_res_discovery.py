@@ -64,6 +64,12 @@ class Discovery(object):
         if self.getandset_singularity() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set singularity resource" % self.hook_name)
 
+        if self.getandset_ethernet_speed() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set ethernet_speed resource" % self.hook_name)
+
+        if self.getandset_infiniband_speed() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set infiniband_speed resource" % self.hook_name)
+
     def run(self):
         if self.e.type in self.hook_events.keys():
             self.hook_events[self.e.type]()
@@ -413,6 +419,92 @@ class Discovery(object):
         self.vnl[self.local_node].resources_available["singularity"] = singularity
         pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource singularity set to: %s" % (self.hook_name, singularity))
         return True
+
+    ################################################
+    # ethernet_speed and infiniband_speed
+    ################################################
+    def get_ip_a(self):
+        cmd = ['ip', 'a']
+        try:
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            ip_out = result.communicate()[0].decode("utf-8").strip()
+            returncode = result.returncode
+
+            if returncode != 0:
+                ip_out=""
+        except:
+            ip_out = ""
+        return ip_out
+
+    def get_dev_speed(self, dev):
+        cmd = ['/usr/sbin/ethtool', dev]
+        try:
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            ethtool_out = result.communicate()[0].decode("utf-8").strip()
+            returncode = result.returncode
+            if returncode != 0:
+                return 0
+        except:
+            return 0
+
+        for line in ethtool_out.split('\n'):
+            l = line.split()
+            if l[0] == "Speed:":
+                m = re.search(r'\d+', l[1])
+                if m:
+                    try:
+                        return int(m.group())
+                    except:
+                        return 0
+        return 0
+
+    def getandset_ethernet_speed(self):
+        ip_out = self.get_ip_a()
+
+        speed = 0
+        if len(ip_out) > 0:
+            for line in ip_out.split('\n'):
+                l = line.split()
+                if len(l) == 13 and l[8] == "UP":
+                    dev = l[1].split(":")[0]
+                    if 'ib' not in dev:
+                        try:
+                            s = self.get_dev_speed(dev)
+                            if s > speed:
+                                speed = s
+                        except:
+                            continue
+            if speed == 0:
+                speed = None
+            self.vnl[self.local_node].resources_available["ethernet_speed"] = speed
+            if speed:
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource ethernet_speed set to: %d" % (self.hook_name, speed))
+            return True
+        return False
+
+    def getandset_infiniband_speed(self):
+        ip_out = self.get_ip_a()
+
+        speed = 0
+        if len(ip_out) > 0:
+            for line in ip_out.split('\n'):
+                l = line.split()
+                if len(l) == 13 and l[8] == "UP":
+                    dev = l[1].split(":")[0]
+                    if 'ib' in dev:
+                        try:
+                            s = self.get_dev_speed(dev)
+                            if s > speed:
+                                speed = s
+                        except:
+                            continue
+            if speed == 0:
+                speed = None
+            self.vnl[self.local_node].resources_available["infiniband_speed"] = speed
+            if speed:
+                pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource infiniband_speed set to: %d" % (self.hook_name, speed))
+            return True
+        return False
 
 try:
     e = pbs.event()
