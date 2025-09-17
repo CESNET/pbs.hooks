@@ -295,3 +295,20 @@ set hook singularity order = 100
 set hook singularity debug = false
 set hook singularity fail_action = none
 import hook singularity application/x-python default /root/pbs.hooks/hook_singularity.py
+
+#
+# Create and define hook dcgm
+#
+create hook dcgm
+set hook dcgm type = site
+set hook dcgm enabled = true
+set hook dcgm event += execjob_launch
+set hook dcgm event += exechost_periodic
+set hook dcgm event += execjob_epilogue
+set hook dcgm user = pbsadmin
+set hook dcgm alarm = 120
+set hook dcgm freq = 120
+set hook dcgm order = 101
+set hook dcgm debug = false
+set hook dcgm fail_action = none
+import hook dcgm application/x-python default /root/pbs.hooks/hook_dcgm.py
