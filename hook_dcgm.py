@@ -177,7 +177,36 @@ def get_gpu_id(uuid):
                 return id
     return -1
 
-def parse_dcgmi_stats(job, jobid):
+def get_gpu_mem():
+    gpu_mem = 0
+    cmd = ['nvidia-smi', '--query-gpu=memory.total', '--format=csv', '-i', '0']
+    try:
+        process = subprocess.Popen(cmd, shell=False,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    universal_newlines=True)
+        out = process.communicate()[0].split('\n')
+
+        if process.returncode != 0:
+            return gpu_mem
+    except Exception as err:
+        pbs.logmsg(pbs.EVENT_ERROR, f"Failed to get memory. Running nvidia-smi failed: {str(err)}")
+        return gpu_mem
+
+    for line in out:
+        l = line.split()
+        if len(l) == 2 and l[1] == "MiB":
+            try:
+                gpu_mem = int(l[0]) * 1024 * 1024
+            except:
+                gpu_mem = 0
+
+    return gpu_mem
+
+def parse_dcgmi_stats(job, jobid, gpumem):
+    if gpumem <= 0:
+        return
+
     cmd = ["dcgmi", "stats", "-j", jobid, "-v"]
 
     out = []
@@ -202,10 +231,10 @@ def parse_dcgmi_stats(job, jobid):
                 if m:
                     gpupercent += int(m.group(1))
         if len(l) == 4:
-            if l[1].strip().startswith("Memory Utilization"):
-                m = re.search('.*Max: ([0-9]+),.*', l[2].strip())
+            if l[1].strip().startswith("Max GPU Memory Used"):
+                m = re.search('([0-9]+)', l[2].strip())
                 if m:
-                    gpumemmaxpercent += int(m.group(1))
+                    gpumemmaxpercent += int(100 * (int(m.group(1))/gpumem))
 
     job.resources_used['gpupercent'] = gpupercent
     job.resources_used['gpumemmaxpercent'] = gpumemmaxpercent
@@ -245,9 +274,11 @@ try:
         job = e.job
         jobid = e.job.id
 
+        gpumem = get_gpu_mem()
+
         if check_dcgmi_started(jobid):
             # we are probably on sis mom and dcgmi has been already started in previous task
-            parse_dcgmi_stats(job, jobid)
+            parse_dcgmi_stats(job, jobid, gpumem)
             e.accept()
 
         resources = parse_exec_vnode(job.exec_vnode)
@@ -264,7 +295,7 @@ try:
         enable_dcmgi_stats(groupid, jobid)
 
         if check_dcgmi_started(jobid):
-            parse_dcgmi_stats(job, jobid)
+            parse_dcgmi_stats(job, jobid, gpumem)
 
         e.accept()
 
@@ -272,12 +303,14 @@ try:
     # host periodic hook, collects data
     ###
     if e.type == pbs.EXECHOST_PERIODIC:
+        gpumem = get_gpu_mem()
+
         for jobid in pbs.event().job_list.keys():
             if not check_dcgmi_started(jobid):
                 continue
 
             job = pbs.event().job_list[jobid]
-            parse_dcgmi_stats(job, jobid)
+            parse_dcgmi_stats(job, jobid, gpumem)
 
         e.accept()
 
@@ -296,7 +329,8 @@ try:
         if ngpus == 0:
             e.accept()
 
-        parse_dcgmi_stats(job, jobid)        
+        gpumem = get_gpu_mem()
+        parse_dcgmi_stats(job, jobid, gpumem)
         
         disable_dcmgi_stats(jobid)
         groupid = read_and_delete_groupid(jobid)
@@ -307,5 +341,6 @@ try:
 
     e.accept()
         
-except:
+except Exception as err:
+    pbs.logmsg(pbs.EVENT_ERROR, f"Failed to run dcgm hook. Event accepted anyway. Error: {str(err)}")
     e.accept() # do not fail job if hook fails
