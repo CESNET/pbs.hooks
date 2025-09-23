@@ -11,6 +11,10 @@ set resource gpupercent flag = r
 create resource gpumemmaxpercent
 set resource gpumemmaxpercent type = long
 set resource gpumemmaxpercent flag = r
+
+create resource gpuenergyconsumed
+set resource gpuenergyconsumed type = long
+set resource gpuenergyconsumed flag = r
 '''
 
 DCGMI_GROUPID_LOCATION="/tmp"
@@ -222,6 +226,7 @@ def parse_dcgmi_stats(job, jobid, gpumem):
 
     gpupercent = 0
     gpumemmaxpercent = 0
+    gpuenergyconsumed = 0
     for line in out:
         l = line.split("|")
 
@@ -230,14 +235,20 @@ def parse_dcgmi_stats(job, jobid, gpumem):
                 m = re.search('.*Avg: ([0-9]+),.*', l[2].strip())
                 if m:
                     gpupercent += int(m.group(1))
-        if len(l) == 4:
+
             if l[1].strip().startswith("Max GPU Memory Used"):
                 m = re.search('([0-9]+)', l[2].strip())
                 if m:
                     gpumemmaxpercent += int(100 * (int(m.group(1))/gpumem))
 
+            if l[1].strip().startswith("Energy Consumed"):
+                m = re.search('([0-9]+)', l[2].strip())
+                if m:
+                    gpuenergyconsumed += int(m.group(1))
+
     job.resources_used['gpupercent'] = gpupercent
     job.resources_used['gpumemmaxpercent'] = gpumemmaxpercent
+    job.resources_used['gpuenergyconsumed'] = gpuenergyconsumed
                 
                 
 def add_gpus_to_groupid(groupid):
