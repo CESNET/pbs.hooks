@@ -660,6 +660,12 @@ try:
 
 
 
+        check_output = os.popen(f"pgrep -f hook_exechost_periodic_scratch").read().strip()
+        pids = [pid for pid in check_output.splitlines() if pid]
+        if len(pids) > 1:
+            pbs.logmsg(pbs.EVENT_DEBUG, "scratch hook, some subprocess still running")
+            e.accept()
+
         vnl = pbs.event().vnode_list
         local_node = pbs.get_local_nodename()
 
