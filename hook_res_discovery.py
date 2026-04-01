@@ -465,7 +465,7 @@ class Discovery(object):
         if len(ip_out) > 0:
             for line in ip_out.split('\n'):
                 l = line.split()
-                if len(l) == 13 and l[8] == "UP":
+                if len(l) == 13 and "UP" in l:
                     dev = l[1].split(":")[0]
                     if 'ib' not in dev:
                         try:
@@ -489,7 +489,7 @@ class Discovery(object):
         if len(ip_out) > 0:
             for line in ip_out.split('\n'):
                 l = line.split()
-                if len(l) == 13 and l[8] == "UP":
+                if len(l) == 13 and "UP" in l:
                     dev = l[1].split(":")[0]
                     if 'ib' in dev:
                         try:
