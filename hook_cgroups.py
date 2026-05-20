@@ -82,7 +82,7 @@ if platform.system() != 'Linux':
     pbs.event().accept()
 
 # we're on Linux, but does the kernel support cgroups?
-rel = list(map(int, (platform.release().split('-')[0].split('.'))))
+rel = list(map(int, (platform.release().replace('+', '-').split('-')[0].split('.'))))
 pbs.logmsg(pbs.EVENT_DEBUG4,
            'Cgroup hook: detected Linux kernel version %d.%d.%d' %
            (rel[0], rel[1], rel[2]))
