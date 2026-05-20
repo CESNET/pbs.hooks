@@ -242,7 +242,7 @@ def parse_dcgmi_stats(job, jobid, gpumem):
                     gpumemmaxpercent += int(100 * (int(m.group(1))/gpumem))
 
             if l[1].strip().startswith("Power Usage"):
-                m = re.search('.*Avg: ([\.0-9]+),.*', l[2].strip())
+                m = re.search(r'.*Avg: ([\.0-9]+),.*', l[2].strip())
                 if m:
                     gpupowerusageavg = float(m.group(1))
                     gpupowerusage += gpupowerusageavg * (int(job.resources_used['walltime']) / 3600.0) # Wh
@@ -267,7 +267,7 @@ def add_gpus_to_groupid(groupid):
         return
     
     for line in out:
-        m = re.search('.*UUID: ([-A-Za-z0-9]+)\).*', line)
+        m = re.search(r'.*UUID: ([-A-Za-z0-9]+)\).*', line)
         if m:
             uuid = m.group(1)
             id = get_gpu_id(uuid)
