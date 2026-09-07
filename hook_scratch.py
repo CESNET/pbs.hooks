@@ -251,10 +251,7 @@ try:
                     e.reject("scratch hook failed: %s" % str(err))
             elif should_create_dir(j, scratch_type, include_host_dir):
                 try:
-                    if scratch_type == "scratch_shm" or include_host_dir:
-                        os.makedirs(path)
-                    else:
-                        os.mkdir(path)
+                    os.makedirs(path)
                     set_permissions(user, umask, path)
 
                 except FileExistsError:
