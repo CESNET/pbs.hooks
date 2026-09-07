@@ -16,7 +16,9 @@ scratch_paths = {"scratch_local":"scratch", "scratch_ssd":"scratch.ssd", "scratc
 scratch_types = {"scratch_local":"local", "scratch_ssd":"ssd", "scratch_shared": "shared", "scratch_shm": "shm"}
 scratch_shm_dir = "/dev/shm"
 
-
+scratch_paths["scratch_local"] = "scratch/local" if os.path.isdir("/scratch/local") else "scratch"
+scratch_paths["scratch_ssd"] = "scratch/local.ssd" if os.path.isdir("/scratch/local.ssd") else "scratch.ssd"
+scratch_paths["scratch_shared"] = "scratch/shared" if os.path.isdir("/scratch/shared") else "scratch.shared"
 
 def parse_cfg():
     config = {}
