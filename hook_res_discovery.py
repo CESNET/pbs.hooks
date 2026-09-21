@@ -3,6 +3,7 @@ import os
 import json
 import re
 import subprocess
+from pathlib import Path
 
 
 class Discovery(object):
@@ -69,6 +70,9 @@ class Discovery(object):
 
         if self.getandset_infiniband_speed() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set infiniband_speed resource" % self.hook_name)
+
+        if self.getandset_multijob() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set multijob resource" % self.hook_name)
 
     def run(self):
         if self.e.type in self.hook_events.keys():
@@ -505,6 +509,25 @@ class Discovery(object):
                 pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource infiniband_speed set to: %d" % (self.hook_name, speed))
             return True
         return False
+
+    ################################################
+    # multijob
+    ################################################
+    def getandset_multijob(self):
+        base="/scratch"
+        prefix="multijob-"
+        multijob = sorted(
+            p.name[len(prefix):]
+            for p in Path(base).iterdir()
+                if p.name.startswith(prefix)
+        )
+        if not multijob or multijob == [] or not Path(base).exists():
+            multijob = None
+        else:
+            multijob = ",".join(multijob)
+        self.vnl[self.local_node].resources_available["multijob"] = multijob
+        pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource multijob set to: %s" % (self.hook_name, multijob))
+        return True
 
 try:
     e = pbs.event()

@@ -140,6 +140,9 @@ set hook health-check fail_action = none
 import hook health-check application/x-python default /root/pbs.hooks/hook_health-check.py
 import hook health-check application/x-config default /root/pbs.hooks/hook_health-check.json
 
+create resource multijob
+set resource multijob type = string_array
+set resource multijob flag = h
 #
 # Create and define hook res_discovery
 #
