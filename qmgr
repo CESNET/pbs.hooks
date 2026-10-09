@@ -143,6 +143,9 @@ import hook health-check application/x-config default /root/pbs.hooks/hook_healt
 create resource multijob
 set resource multijob type = string_array
 set resource multijob flag = h
+create resource ncpus_per_numa
+set resource ncpus_per_numa type = string
+set resource ncpus_per_numa flag = h
 #
 # Create and define hook res_discovery
 #

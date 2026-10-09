@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from shutil import which
 
 
 class Discovery(object):
@@ -73,6 +74,9 @@ class Discovery(object):
 
         if self.getandset_multijob() == False:
             pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set multijob resource" % self.hook_name)
+
+        if self.getandset_ncpus_per_numa() == False:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, failed to get and set ncpus_per_numa resource" % self.hook_name)
 
     def run(self):
         if self.e.type in self.hook_events.keys():
@@ -529,6 +533,32 @@ class Discovery(object):
         pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource multijob set to: %s" % (self.hook_name, multijob))
         return True
 
+    ################################################
+    # ncpus_per_numa
+    ################################################
+    def getandset_ncpus_per_numa(self):
+        if not which('numactl'): return False
+
+        cmd = ['numactl', '--hardware']
+        try:
+            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            numactl_out = result.communicate()[0].decode("utf-8").strip()
+            returncode = result.returncode
+            if returncode != 0:
+                return False
+        except:
+            return False
+
+        ncpus_per_numa = 1
+        for line in numactl_out.split('\n'):
+            l = line.split()
+            if len(l) > 3 and l[0] == "node" and l[1] == "0" and l[2] == "cpus:":
+                ncpus_per_numa = len(l) - 3
+                break
+
+        self.vnl[self.local_node].resources_available["ncpus_per_numa"] = f"{ncpus_per_numa}"
+        pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource ncpus_per_numa set to: %d" % (self.hook_name, ncpus_per_numa))
+        return True
 try:
     e = pbs.event()
     discovery = Discovery(e)
