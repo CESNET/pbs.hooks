@@ -536,27 +536,37 @@ class Discovery(object):
     ################################################
     # ncpus_per_numa
     ################################################
-    def getandset_ncpus_per_numa(self):
-        if not which('numactl'): return False
-
-        cmd = ['numactl', '--hardware']
-        try:
-            result = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-            numactl_out = result.communicate()[0].decode("utf-8").strip()
-            returncode = result.returncode
-            if returncode != 0:
-                return False
-        except:
+    def getandset_ncpus_per_numa(self, numa_node=0):
+        lscpu = which('lscpu')
+        if not lscpu:
             return False
 
-        ncpus_per_numa = 1
-        for line in numactl_out.split('\n'):
-            l = line.split()
-            if len(l) > 3 and l[0] == "node" and l[1] == "0" and l[2] == "cpus:":
-                ncpus_per_numa = len(l) - 3
-                break
+        try:
+            out = subprocess.run(
+                [lscpu, '-p=NODE,SOCKET,CORE'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=10,
+            ).stdout.decode('utf-8')
+        except (OSError, subprocess.SubprocessError) as e:
+            pbs.logmsg(pbs.EVENT_DEBUG, "%s, lscpu failed: %s" % (self.hook_name, e))
+            return False
 
-        self.vnl[self.local_node].resources_available["ncpus_per_numa"] = f"{ncpus_per_numa}"
+        # Unique (socket, core) pairs on the node = physical cores, HT siblings collapsed
+        cores = set()
+        for line in out.splitlines():
+            if not line or line.startswith('#'):
+                continue
+            node, socket, core = line.split(',')[:3]
+            if (node or '0') == str(numa_node):   # empty NODE on non-NUMA boxes -> treat as 0
+                cores.add((socket, core))
+
+        if not cores:
+            return False
+
+        ncpus_per_numa = len(cores)
+        self.vnl[self.local_node].resources_available["ncpus_per_numa"] = str(ncpus_per_numa)
         pbs.logmsg(pbs.EVENT_DEBUG, "%s, resource ncpus_per_numa set to: %d" % (self.hook_name, ncpus_per_numa))
         return True
 try:
